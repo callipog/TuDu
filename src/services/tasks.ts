@@ -109,8 +109,24 @@ export const taskService = {
     if (updates.tags !== undefined) dbUpdates.tags = updates.tags;
     if (updates.dueDate !== undefined) dbUpdates.due_date = updates.dueDate;
     if (updates.completed !== undefined) dbUpdates.completed = updates.completed;
+    
+    // Save status in local mapping since Supabase might not have the column
+    if (updates.status !== undefined) {
+      const statuses = JSON.parse(localStorage.getItem('task_statuses') || '{}');
+      statuses[id] = updates.status;
+      localStorage.setItem('task_statuses', JSON.stringify(statuses));
+    }
 
+    // Try update
     try {
+      // If we only have status to update, skip Supabase update
+      if (Object.keys(dbUpdates).length === 0) {
+        const tasks = await this.getTasks();
+        const t = tasks.find(x => x.id === id);
+        if (t) return { ...t, ...updates };
+        throw new Error('Task not found');
+      }
+
       const { data, error } = await supabase
         .from('tasks')
         .update(dbUpdates)
@@ -164,6 +180,16 @@ export const taskService = {
 
 // Helper functions to map between DB schema (snake_case) and Frontend schema (camelCase)
 function mapTaskFromDb(dbTask: any): Task {
+  let mappedStatus = dbTask.status;
+  if (!mappedStatus) {
+    try {
+      const statuses = JSON.parse(localStorage.getItem('task_statuses') || '{}');
+      mappedStatus = statuses[dbTask.id];
+    } catch {
+      // ignore
+    }
+  }
+
   return {
     id: dbTask.id,
     title: dbTask.title,
@@ -173,6 +199,7 @@ function mapTaskFromDb(dbTask: any): Task {
     dueDate: dbTask.due_date,
     completed: dbTask.completed,
     createdAt: dbTask.created_at,
+    status: mappedStatus || (dbTask.completed ? 'done' : 'todo'),
   };
 }
 

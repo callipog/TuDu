@@ -25,7 +25,7 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-lg overflow-hidden rounded-2xl bg-[#09090b] border border-white/10 shadow-2xl z-10"
+            className="relative w-full max-w-lg rounded-2xl bg-[#09090b] border border-white/10 shadow-2xl z-10"
           >
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
               <h2 className="text-lg font-semibold text-white">{title}</h2>
