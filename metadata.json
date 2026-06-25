@@ -1,0 +1,6 @@
+{
+  "name": "Focus Desk",
+  "description": "Um aplicativo de organização de tarefas inspirado no Notion, com calendário, tags e níveis de urgência.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
