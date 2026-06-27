@@ -12,6 +12,8 @@ import { ptBR } from 'date-fns/locale';
 
 import { TagInput } from './components/TagInput';
 import { tagService, PREDEFINED_COLORS } from './services/tags';
+import { ManageTagsModal } from './components/ManageTagsModal';
+import { TitleBar } from './components/TitleBar';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -19,11 +21,13 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingTasks, setLoadingTasks] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isManageTagsModalOpen, setIsManageTagsModalOpen] = useState(false);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
@@ -40,10 +44,15 @@ export default function App() {
 
   useEffect(() => {
     loadTasks();
+    loadTags();
   }, []);
 
+  function loadTags() {
+    setAvailableTags(tagService.getTags().map(t => t.name));
+  }
+
   async function loadTasks() {
-    setLoading(true);
+    setLoadingTasks(true);
     setError(null);
     try {
       const data = await taskService.getTasks();
@@ -51,7 +60,7 @@ export default function App() {
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar tarefas');
     } finally {
-      setLoading(false);
+      setLoadingTasks(false);
     }
   }
 
@@ -108,6 +117,7 @@ export default function App() {
         });
         setTasks([newTask, ...tasks]);
       }
+      loadTags();
       setIsModalOpen(false);
       resetModal();
     } catch (err) {
@@ -198,25 +208,26 @@ export default function App() {
   const criticalTasks = filteredTasks.filter(t => t.urgency === 'critical');
   const otherTasks = filteredTasks.filter(t => t.urgency !== 'critical');
 
-  const allTags: string[] = Array.from(new Set(tasks.flatMap(t => t.tags || [])));
-  const sidebarTags = allTags;
+  const sidebarTags = availableTags;
 
   return (
-    <div className="flex h-screen w-full bg-[#09090b] text-[#e4e4e7] font-sans antialiased overflow-hidden">
-      {/* Sidebar (Glassy) */}
-      <motion.aside
+    <div className="flex flex-col h-screen w-full bg-[#09090b] text-[#e4e4e7] font-sans antialiased overflow-hidden">
+      <TitleBar />
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar (Glassy) */}
+        <motion.aside
         initial={false}
         animate={{ width: sidebarOpen ? 256 : 0, opacity: sidebarOpen ? 1 : 0 }}
         className="flex-shrink-0 h-full border-r border-white/5 bg-white/[0.02] backdrop-blur-2xl overflow-hidden flex flex-col z-50 relative"
       >
         <div className="p-6 flex items-center gap-3 w-64">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0">
-            <span className="text-white font-bold">T</span>
+          <div className="w-8 h-8 flex items-center justify-center shrink-0">
+            <img src="icon.png" alt="TuDu Logo" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-lg font-semibold tracking-tight whitespace-nowrap">TuDu</h1>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1 overflow-y-auto w-64 pb-8 flex flex-col">
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar w-64 pb-8 flex flex-col">
           <div className="mb-6 shrink-0">
             <div className="flex justify-between items-center px-2 mb-2">
               <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Views</p>
@@ -239,7 +250,7 @@ export default function App() {
             <div className="flex justify-between items-center px-2 mb-2">
               <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Tags</p>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 max-h-48 overflow-y-auto scrollbar-hide pr-2">
               {sidebarTags.length > 0 ? sidebarTags.map((tag) => {
                 const color = tagService.getTagColor(tag);
                 return (
@@ -258,6 +269,13 @@ export default function App() {
                 <p className="text-xs text-zinc-500 italic px-2">Nenhuma tag ainda.</p>
               )}
             </div>
+            <button 
+              onClick={() => setIsManageTagsModalOpen(true)}
+              className="mt-3 px-2 flex items-center gap-2 text-xs text-zinc-400 hover:text-white transition-colors"
+            >
+              <Settings size={14} />
+              <span>Gerenciar Tags</span>
+            </button>
           </div>
 
           <div className="mb-6 shrink-0">
@@ -279,7 +297,7 @@ export default function App() {
           </div>
         </nav>
 
-        <div className="p-4 w-64">
+        <div className="p-4 w-64 mt-auto">
           <div className="space-y-1">
              {/* <NavItem icon={<Settings size={16} />} label="Configurações" /> */}
           </div>
@@ -322,12 +340,12 @@ export default function App() {
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-8 h-full">
+        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+          <div className="p-8 flex-1 flex flex-col">
             
             {/* Dashboard Cards & Quick Calendar */}
             {activeTab !== 'calendar' && (
-              <div className="flex flex-col xl:flex-row gap-8 mb-8">
+              <div className="flex flex-col xl:flex-row gap-8 mb-8 shrink-0">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 h-fit">
                   <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-20">
@@ -422,7 +440,7 @@ export default function App() {
             )}
 
             {activeTab === 'inbox' || activeTab === 'today' || activeTab === 'all' ? (
-              <div className="h-full min-h-[400px]">
+              <div className="flex-1 min-h-[400px]">
                 <KanbanBoard 
                   tasks={filteredTasks} 
                   onToggleTask={handleToggleTask} 
@@ -564,6 +582,13 @@ export default function App() {
           </div>
         </form>
       </Modal>
+
+      <ManageTagsModal 
+        isOpen={isManageTagsModalOpen}
+        onClose={() => setIsManageTagsModalOpen(false)}
+        onTagsUpdated={loadTags}
+      />
+      </div>
     </div>
   );
 }
@@ -624,6 +649,3 @@ function TagItem({ color, label, onColorChange, isOpen, onToggleOpen, isActive, 
     </div>
   );
 }
-
-
-

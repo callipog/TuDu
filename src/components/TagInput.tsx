@@ -90,7 +90,7 @@ export function TagInput({ selectedTags, onChange }: TagInputProps) {
       </div>
 
       {showDropdown && (inputValue || filteredTags.length > 0) && (
-        <div className="absolute bottom-full left-0 right-0 mb-2 bg-[#18181b] border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden max-h-48 overflow-y-auto">
+        <div className="absolute bottom-full left-0 right-0 mb-2 bg-[#18181b] border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
           {filteredTags.map(tag => (
             <button
               key={tag.id}

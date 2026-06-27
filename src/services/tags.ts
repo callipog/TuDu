@@ -52,5 +52,11 @@ export const tagService = {
     const tags = this.getTags();
     const tag = tags.find(t => t.name.toLowerCase() === name.toLowerCase());
     return tag ? tag.color : 'bg-zinc-500'; // Default color
+  },
+
+  deleteTag(id: string): void {
+    const tags = this.getTags();
+    const newTags = tags.filter(t => t.id !== id);
+    this.saveTags(newTags);
   }
 };

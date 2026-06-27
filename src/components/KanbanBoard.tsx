@@ -56,7 +56,7 @@ export function KanbanBoard({ tasks, onToggleTask, onClickTask, onDragStart, onD
                 {colTasks.length}
               </span>
             </div>
-            <div className="p-4 flex-1 overflow-y-auto space-y-3 min-h-[150px]">
+            <div className="p-4 flex-1 overflow-y-auto custom-scrollbar space-y-3 min-h-[150px]">
               <AnimatePresence mode="popLayout">
                 {colTasks.map(task => (
                   <motion.div 
