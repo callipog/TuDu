@@ -1,6 +1,6 @@
 # TuDu - Gerenciador de Tarefas
-
 Um aplicativo de gerenciamento de tarefas moderno, responsivo e com tema escuro, focado em produtividade e organização visual.
+<img src="https://github.com/callipog/TuDu/blob/main/public/icon.png" alt="Logo do TuDu" width="300" height="300">
 
 ## 🚀 Funcionalidades
 
