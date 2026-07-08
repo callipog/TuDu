@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Archive } from 'lucide-react';
 import { Task, TaskStatus } from '../types';
 import { TaskItem } from './TaskItem';
 import { motion, AnimatePresence } from 'motion/react';
@@ -7,6 +8,8 @@ interface KanbanBoardProps {
   tasks: Task[];
   onToggleTask: (task: Task) => void;
   onClickTask?: (task: Task) => void;
+  onToggleNotifications?: (task: Task) => void;
+  onArchiveCompleted?: () => void;
   onDragStart: (e: React.DragEvent, taskId: string) => void;
   onDrop: (e: React.DragEvent, status: TaskStatus) => void;
 }
@@ -19,7 +22,7 @@ const columns: { id: TaskStatus; label: string; color: string }[] = [
   { id: 'done', label: 'Finalizado', color: 'border-emerald-500/20' }
 ];
 
-export function KanbanBoard({ tasks, onToggleTask, onClickTask, onDragStart, onDrop }: KanbanBoardProps) {
+export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifications, onArchiveCompleted, onDragStart, onDrop }: KanbanBoardProps) {
   const [dragOverCol, setDragOverCol] = useState<TaskStatus | null>(null);
 
   const handleDragOver = (e: React.DragEvent, status: TaskStatus) => {
@@ -50,11 +53,22 @@ export function KanbanBoard({ tasks, onToggleTask, onClickTask, onDragStart, onD
             onDragOver={(e) => handleDragOver(e, col.id)}
             onDragLeave={handleDragLeave}
           >
-            <div className="p-4 border-b border-white/5 flex items-center justify-between">
+            <div className="p-4 border-b border-white/5 flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-white">{col.label}</h3>
-              <span className="text-xs font-medium bg-white/10 text-zinc-300 px-2 py-0.5 rounded-full">
-                {colTasks.length}
-              </span>
+              <div className="flex items-center gap-2">
+                {col.id === 'done' && colTasks.length > 0 && onArchiveCompleted && (
+                  <button
+                    onClick={onArchiveCompleted}
+                    title="Arquivar todas as tarefas finalizadas"
+                    className="flex items-center gap-1 text-[10px] font-semibold text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 px-2 py-1 rounded-md transition-colors"
+                  >
+                    <Archive size={12} /> Arquivar tudo
+                  </button>
+                )}
+                <span className="text-xs font-medium bg-white/10 text-zinc-300 px-2 py-0.5 rounded-full">
+                  {colTasks.length}
+                </span>
+              </div>
             </div>
             <div className="p-4 flex-1 overflow-y-auto custom-scrollbar space-y-3 min-h-[150px]">
               <AnimatePresence mode="popLayout">
@@ -78,7 +92,11 @@ export function KanbanBoard({ tasks, onToggleTask, onClickTask, onDragStart, onD
                       tags={task.tags}
                       time={task.dueDate}
                       completed={task.completed}
+                      notificationsEnabled={task.notificationsEnabled}
+                      recurrence={task.recurrence}
+                      subtasks={task.subtasks}
                       onToggle={() => onToggleTask(task)}
+                      onToggleNotifications={() => onToggleNotifications?.(task)}
                       onClick={() => onClickTask?.(task)}
                     />
                   </motion.div>

@@ -19,4 +19,16 @@ db.version(1).stores({
   tags: 'id, name' // indexed props
 });
 
+// v2: adiciona índice `archived` e garante defaults nos campos novos
+// (notificações e arquivamento) para as tarefas já existentes.
+db.version(2).stores({
+  tasks: 'id, title, urgency, completed, createdAt, status, archived',
+  tags: 'id, name'
+}).upgrade(async (tx) => {
+  await tx.table('tasks').toCollection().modify((task: Task) => {
+    if (task.notificationsEnabled === undefined) task.notificationsEnabled = false;
+    if (task.archived === undefined) task.archived = false;
+  });
+});
+
 export { db };

@@ -1,41 +1,77 @@
-# TuDu - Gerenciador de Tarefas
-<img src="https://github.com/callipog/TuDu/blob/main/public/icon.png" alt="Logo do TuDu" width="300" height="300">
-Um aplicativo de gerenciamento de tarefas moderno, responsivo e com tema escuro, focado em produtividade e organização visual.
+<p align="center">
+  <img src="https://github.com/callipog/TuDu/blob/main/public/icon.png" alt="Logo do TuDu" width="128px" height="128px">
+</p>
+<h1 align="center">TuDu</h1>
+
+<p align="center"><a href="https://github.com/callipog/TuDu/releases" target="_blank"><img src="https://img.shields.io/github/v/release/callipog/TuDu" alt="Latest release" /></a> <a href="https://github.com/callipog/TuDu/releases" target="_blank"></a></p>
+
+Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tema escuro, foco em produtividade e organização visual. Construído com Electron + React, roda de forma nativa, envia notificações do Windows e vive na bandeja do sistema.
 
 ## 🚀 Funcionalidades
 
-- **Dashboard Interativo**: Acompanhe seu progresso geral, tarefas concluídas e tarefas críticas pendentes.
-- **Gestão de Tarefas**: Crie, edite e exclua tarefas com facilidade.
-- **Níveis de Criticidade**: Classifique tarefas como Baixa, Média, Alta ou Crítica (com indicadores visuais na lateral dos cards).
-- **Sistema de Tags**: Categorize suas tarefas. As tags são organizadas automaticamente no menu lateral.
-- **Visualizações Flexíveis**:
-  - **Caixa de Entrada**: Todas as tarefas pendentes sem data.
-  - **Hoje**: Foco nas tarefas programadas para o dia atual.
-  - **Calendário**: Visão estruturada dos próximos dias.
-  - **Todas as Tarefas**: Visão geral de tudo.
-- **Filtros Avançados**: Filtre rapidamente por tag ou nível de criticidade e limpe os filtros com um clique.
+### Tarefas
+- **Quadro Kanban** com colunas Backlog → A Fazer → Em Andamento → Revisão → Finalizado (arraste e solte).
+- **Criação, edição e detalhes**: crie e edite tarefas; clique para ver todos os atributos em modo somente-leitura, com um lápis para editar.
+- **Níveis de criticidade** (Baixa, Média, Alta, Crítica) com indicadores de cor.
+- **Data de entrega** exibida nos cards, com destaque de **Atrasado**.
+- **Subtarefas / checklist** com barra de progresso.
+- **Tarefas recorrentes** (diária, semanal, mensal): ao concluir, a próxima ocorrência é criada automaticamente.
+- **Arquivamento**: arquive de uma vez as finalizadas e consulte-as numa tela dedicada em lista com filtros.
+
+### 🔔 Notificações
+- Sininho por tarefa e checkbox para ativar/desativar.
+- **Popups nativos do Windows**: um lembrete antecipado (antecedência configurável por tarefa — de 10 min a 1 dia) e outro na hora exata do prazo.
+
+### Visualizações
+- **Caixa de Entrada**: quadro principal de tarefas.
+- **Hoje**: tarefas com prazo para o dia atual.
+- **Calendário**: grade mensal com painel do dia selecionado (estilo Google/Notion).
+- **Agenda**: grade semanal ou diária com horários na lateral (estilo Teams/Meet) — clique num bloco para editar ou num espaço vazio para criar.
+- **Lista**: todas as tarefas com seus dados e filtros.
+- **Arquivados**: histórico das tarefas arquivadas.
+- **Filtros** por texto, tag e criticidade; contador de tarefas **atrasadas** na barra lateral.
+
+### Produtividade
+- **Atalhos de teclado** (Nova tarefa, busca, navegação entre views) com guia acessível pelo header ou tecla `?`.
+- **Gerenciador de tags**: crie tags e edite suas cores.
+- **Mini calendário** semanal com atalho "Ir até hoje".
+
+### Sistema (Configurações)
+- **Iniciar com o Windows** e **Iniciar minimizado**.
+- **Fechar para a bandeja** (opcional): o X esconde na bandeja ou fecha o app.
+- **Bandeja do sistema** com menu (Abrir, Verificar atualizações, Sair).
+- **Backup**: exporte e importe todos os dados em JSON; acesso rápido à pasta do banco de dados.
+- **Atualizações automáticas** via GitHub Releases (electron-updater).
+- **Reportar bug** direto por e-mail e tela "Sobre" com versão e repositório.
 
 ## 🛠️ Tecnologias Utilizadas
 
-- **React** (Vite)
-- **Tailwind CSS** para estilização rápida e responsiva
-- **Lucide React** para ícones limpos e modernos
-- **Date-fns** para manipulação e formatação de datas
-- **Framer Motion** para animações fluidas na interface
+- **Electron** — empacotamento desktop, notificações e bandeja
+- **React** (Vite) + **TypeScript**
+- **Tailwind CSS** para estilização responsiva
+- **Dexie** (IndexedDB) para persistência local das tarefas
+- **Lucide React** para ícones
+- **Date-fns** para manipulação de datas
+- **Motion (Framer Motion)** para animações
+- **electron-updater** para atualizações automáticas
 
-## 📦 Como rodar o projeto localmente
+## 📦 Como rodar o projeto
 
-1. Clone este repositório.
-2. Instale as dependências executando:
+1. Clone este repositório e instale as dependências:
    ```bash
    npm install
    ```
-3. Inicie o servidor de desenvolvimento:
+2. Rode o app desktop em desenvolvimento (Electron + Vite):
    ```bash
-   npm run dev
+   npm run electron:dev
    ```
-4. Abra o navegador no endereço indicado (geralmente `http://localhost:3000`).
+   > Para rodar apenas a interface web no navegador: `npm run dev` (`http://localhost:3000`).
+3. Gere o instalador para Windows:
+   ```bash
+   npm run electron:build
+   ```
+   O instalador é gerado na pasta `dist-electron/`.
 
 ## 🎨 Design
 
-O projeto adota uma filosofia de design "Dark Mode First", utilizando tons de zinco e contrastes coloridos (esmeralda, âmbar, rosa, índigo) para guiar a atenção do usuário aos elementos de prioridade e status das tarefas.
+O projeto adota uma filosofia "Dark Mode First", utilizando tons de zinco e contrastes coloridos (esmeralda, âmbar, rosa, índigo) para guiar a atenção do usuário aos elementos de prioridade e status das tarefas.

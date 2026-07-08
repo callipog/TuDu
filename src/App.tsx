@@ -1,18 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Check, Clock, Inbox, Layout, Plus, Search, Settings, Sidebar as SidebarIcon, Database } from 'lucide-react';
+import { AlertTriangle, Archive, Bell, BellOff, Calendar, CalendarClock, Check, Clock, Inbox, Keyboard, Layout, List, Plus, Search, Settings, Sidebar as SidebarIcon, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Task, Urgency } from './types';
+import { Task, Urgency, Recurrence, SubTask } from './types';
 import { taskService } from './services/tasks';
+import { notificationService, DEFAULT_REMINDER_MINUTES } from './services/notifications';
 import { Modal } from './components/Modal';
 import { MonthlyCalendar } from './components/MonthlyCalendar';
 import { KanbanBoard } from './components/KanbanBoard';
 import { TaskItem } from './components/TaskItem';
-import { format, isToday, parseISO } from 'date-fns';
+import { ArchivedView } from './components/ArchivedView';
+import { TaskDetailModal } from './components/TaskDetailModal';
+import { AgendaView } from './components/AgendaView';
+import { TaskListView } from './components/TaskListView';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { ShortcutsModal } from './components/ShortcutsModal';
+import { format, isToday, isSameDay, isPast, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 import { TagInput } from './components/TagInput';
 import { tagService, PREDEFINED_COLORS } from './services/tags';
 import { ManageTagsModal } from './components/ManageTagsModal';
+import { SettingsModal } from './components/SettingsModal';
 import { TitleBar } from './components/TitleBar';
 
 export default function App() {
@@ -27,13 +35,23 @@ export default function App() {
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isManageTagsModalOpen, setIsManageTagsModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const [confirm, setConfirm] = useState<{ title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void } | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
   const [newTaskUrgency, setNewTaskUrgency] = useState<Urgency>('medium');
   const [newTaskTags, setNewTaskTags] = useState<string[]>([]);
   const [newTaskDate, setNewTaskDate] = useState<string>('');
+  const [newTaskNotifications, setNewTaskNotifications] = useState(false);
+  const [newTaskReminderMinutes, setNewTaskReminderMinutes] = useState<number>(DEFAULT_REMINDER_MINUTES);
+  const [newTaskRecurrence, setNewTaskRecurrence] = useState<Recurrence>('none');
+  const [newTaskSubtasks, setNewTaskSubtasks] = useState<SubTask[]>([]);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateFilter, setSelectedDateFilter] = useState<Date | null>(null);
@@ -45,7 +63,45 @@ export default function App() {
   useEffect(() => {
     loadTasks();
     loadTags();
+    notificationService.start();
+    return () => notificationService.stop();
   }, []);
+
+  // Mantém o agendador de notificações sincronizado com as tarefas atuais.
+  useEffect(() => {
+    notificationService.setTasks(tasks);
+  }, [tasks]);
+
+  // Atalhos de teclado (inativos ao digitar ou com modal aberto).
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      if (isModalOpen || isManageTagsModalOpen || isSettingsOpen || isShortcutsOpen || detailTask || confirm) return;
+
+      switch (e.key) {
+        case 'n': case 'N':
+          e.preventDefault(); resetModal(); setIsModalOpen(true); break;
+        case '/':
+          e.preventDefault(); searchInputRef.current?.focus(); break;
+        case '?':
+          e.preventDefault(); setIsShortcutsOpen(true); break;
+        case 'i': case 'I':
+          setActiveTab('inbox'); setSelectedDateFilter(null); break;
+        case 'h': case 'H':
+          setActiveTab('today'); setSelectedDateFilter(null); break;
+        case 'c': case 'C':
+          setActiveTab('calendar'); break;
+        case 'a': case 'A':
+          setActiveTab('agenda'); setSelectedDateFilter(null); break;
+        case 'l': case 'L':
+          setActiveTab('list'); setSelectedDateFilter(null); break;
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isModalOpen, isManageTagsModalOpen, isSettingsOpen, isShortcutsOpen, detailTask, confirm]);
 
   function loadTags() {
     setAvailableTags(tagService.getTags().map(t => t.name));
@@ -69,10 +125,35 @@ export default function App() {
       const newCompleted = !task.completed;
       const newStatus = newCompleted ? 'done' : (task.status === 'done' ? 'todo' : task.status);
       await taskService.updateTask(task.id, { completed: newCompleted, status: newStatus });
-      setTasks(tasks.map(t => t.id === task.id ? { ...t, completed: newCompleted, status: newStatus } : t));
+      let updated = tasks.map(t => t.id === task.id ? { ...t, completed: newCompleted, status: newStatus } : t);
+
+      // Recorrência: ao concluir, gera a próxima ocorrência automaticamente.
+      if (newCompleted && task.recurrence && task.recurrence !== 'none' && task.dueDate) {
+        const next = await taskService.createRecurringNext({ ...task, completed: newCompleted, status: newStatus });
+        if (next) updated = [next, ...updated];
+      }
+
+      setTasks(updated);
     } catch (err) {
       console.error('Failed to toggle task', err);
     }
+  }
+
+  function handleViewTask(task: Task) {
+    setDetailTask(task);
+  }
+
+  function handleNewTaskAtDate(date: Date, hour = 9, minute = 0) {
+    resetModal();
+    const d = new Date(date);
+    d.setHours(hour, minute, 0, 0);
+    setNewTaskDate(format(d, "yyyy-MM-dd'T'HH:mm"));
+    setIsModalOpen(true);
+  }
+
+  function handleEditFromDetail(task: Task) {
+    setDetailTask(null);
+    handleEditTask(task);
   }
 
   function handleEditTask(task: Task) {
@@ -82,6 +163,11 @@ export default function App() {
     setNewTaskUrgency(task.urgency);
     setNewTaskTags(task.tags || []);
     setNewTaskDate(task.dueDate ? format(parseISO(task.dueDate), "yyyy-MM-dd'T'HH:mm") : '');
+    setNewTaskNotifications(task.notificationsEnabled ?? false);
+    setNewTaskReminderMinutes(task.reminderMinutes ?? DEFAULT_REMINDER_MINUTES);
+    setNewTaskRecurrence(task.recurrence ?? 'none');
+    setNewTaskSubtasks(task.subtasks ?? []);
+    setNewSubtaskTitle('');
     setIsModalOpen(true);
   }
 
@@ -92,6 +178,68 @@ export default function App() {
     setNewTaskUrgency('medium');
     setNewTaskTags([]);
     setNewTaskDate('');
+    setNewTaskNotifications(false);
+    setNewTaskReminderMinutes(DEFAULT_REMINDER_MINUTES);
+    setNewTaskRecurrence('none');
+    setNewTaskSubtasks([]);
+    setNewSubtaskTitle('');
+  }
+
+  async function handleToggleNotifications(task: Task) {
+    try {
+      const next = !task.notificationsEnabled;
+      await taskService.updateTask(task.id, { notificationsEnabled: next });
+      setTasks(tasks.map(t => t.id === task.id ? { ...t, notificationsEnabled: next } : t));
+    } catch (err) {
+      console.error('Failed to toggle notifications', err);
+    }
+  }
+
+  function requestArchiveCompleted() {
+    const count = activeTasks.filter(t => t.completed).length;
+    if (count === 0) return;
+    setConfirm({
+      title: 'Arquivar finalizadas',
+      message: `Arquivar ${count} tarefa(s) finalizada(s)? Elas sairão do quadro e ficarão disponíveis na aba Arquivados.`,
+      confirmLabel: 'Arquivar tudo',
+      onConfirm: handleArchiveCompleted,
+    });
+  }
+
+  async function handleArchiveCompleted() {
+    try {
+      const ids = await taskService.archiveCompleted();
+      if (ids.length === 0) return;
+      const now = new Date().toISOString();
+      const idSet = new Set(ids);
+      setTasks(tasks.map(t => idSet.has(t.id) ? { ...t, archived: true, archivedAt: now } : t));
+    } catch (err) {
+      console.error('Failed to archive completed tasks', err);
+    }
+  }
+
+  async function handleUnarchiveTask(task: Task) {
+    try {
+      await taskService.unarchiveTask(task.id);
+      setTasks(tasks.map(t => t.id === task.id ? { ...t, archived: false, archivedAt: undefined } : t));
+    } catch (err) {
+      console.error('Failed to unarchive task', err);
+    }
+  }
+
+  function addSubtask() {
+    const title = newSubtaskTitle.trim();
+    if (!title) return;
+    setNewTaskSubtasks([...newTaskSubtasks, { id: crypto.randomUUID(), title, done: false }]);
+    setNewSubtaskTitle('');
+  }
+
+  function toggleSubtask(id: string) {
+    setNewTaskSubtasks(newTaskSubtasks.map(s => s.id === id ? { ...s, done: !s.done } : s));
+  }
+
+  function removeSubtask(id: string) {
+    setNewTaskSubtasks(newTaskSubtasks.filter(s => s.id !== id));
   }
 
   async function handleSaveTask(e: React.FormEvent) {
@@ -105,6 +253,10 @@ export default function App() {
         urgency: newTaskUrgency,
         tags: newTaskTags,
         dueDate: newTaskDate ? new Date(newTaskDate).toISOString() : undefined,
+        notificationsEnabled: newTaskNotifications,
+        reminderMinutes: newTaskReminderMinutes,
+        recurrence: newTaskRecurrence,
+        subtasks: newTaskSubtasks,
       };
 
       if (editingTask) {
@@ -167,46 +319,50 @@ export default function App() {
   };
 
   // Filter tasks based on active tab
-  const filteredTasks = tasks.filter(task => {
+  // Filtros comuns (busca / tag / criticidade), aplicados em todas as views.
+  const matchesCommonFilters = (task: Task) => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       if (!task.title.toLowerCase().includes(q) && !(task.description || '').toLowerCase().includes(q)) {
         return false;
       }
     }
+    if (activeTagFilter && !task.tags.includes(activeTagFilter)) return false;
+    if (activeUrgencyFilter && task.urgency !== activeUrgencyFilter) return false;
+    return true;
+  };
 
-    if (activeTagFilter) {
-      if (!task.tags.includes(activeTagFilter)) {
-        return false;
-      }
-    }
+  // Tarefas ativas (não arquivadas) para as views normais.
+  const activeTasks = tasks.filter(t => !t.archived);
+  const archivedTasks = tasks.filter(t => t.archived);
 
-    if (activeUrgencyFilter) {
-      if (task.urgency !== activeUrgencyFilter) {
-        return false;
-      }
-    }
-
-    if (activeTab === 'calendar') {
-      return true;
-    }
+  const filteredTasks = activeTasks.filter(task => {
+    if (!matchesCommonFilters(task)) return false;
 
     if (activeTab === 'today') {
-      return task.dueDate && isToday(parseISO(task.dueDate));
+      // Deadline hoje OU sem deadline (sempre visível).
+      return !task.dueDate || isToday(parseISO(task.dueDate));
     }
 
     if (activeTab === 'inbox') {
       if (selectedDateFilter) {
-         return task.dueDate && format(parseISO(task.dueDate), 'yyyy-MM-dd') === format(selectedDateFilter, 'yyyy-MM-dd');
+        // Tarefas do dia filtrado + tarefas sem deadline (sempre visíveis).
+        return !task.dueDate || isSameDay(parseISO(task.dueDate), selectedDateFilter);
       }
-      return true; // Show all in Kanban
+      return true;
     }
 
-    return true; 
+    // 'all' e demais views: mostra tudo.
+    return true;
   });
 
-  const criticalTasks = filteredTasks.filter(t => t.urgency === 'critical');
-  const otherTasks = filteredTasks.filter(t => t.urgency !== 'critical');
+  // Lista do dia selecionado no Calendário (somente tarefas com deadline naquele dia).
+  const calendarDayTasks = activeTasks.filter(task =>
+    matchesCommonFilters(task) && task.dueDate && isSameDay(parseISO(task.dueDate), selectedDate)
+  );
+
+  // Contador de tarefas atrasadas (prazo já passou e não concluídas).
+  const overdueCount = activeTasks.filter(t => !t.completed && t.dueDate && isPast(parseISO(t.dueDate))).length;
 
   const sidebarTags = availableTags;
 
@@ -243,7 +399,21 @@ export default function App() {
             <NavItem icon={<Inbox size={16} />} label="Caixa de Entrada" active={activeTab === 'inbox'} onClick={() => { setActiveTab('inbox'); setSelectedDateFilter(null); }} />
             <NavItem icon={<Clock size={16} />} label="Hoje" active={activeTab === 'today'} onClick={() => { setActiveTab('today'); setSelectedDateFilter(null); }} />
             <NavItem icon={<Calendar size={16} />} label="Calendário" active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
-            <NavItem icon={<Layout size={16} />} label="Todas as Tarefas" active={activeTab === 'all'} onClick={() => { setActiveTab('all'); setSelectedDateFilter(null); }} />
+            <NavItem icon={<CalendarClock size={16} />} label="Agenda" active={activeTab === 'agenda'} onClick={() => { setActiveTab('agenda'); setSelectedDateFilter(null); }} />
+            <NavItem icon={<List size={16} />} label="Lista" active={activeTab === 'list'} onClick={() => { setActiveTab('list'); setSelectedDateFilter(null); }} />
+            <NavItem icon={<Archive size={16} />} label="Arquivados" active={activeTab === 'archived'} onClick={() => { setActiveTab('archived'); setSelectedDateFilter(null); }} />
+            {overdueCount > 0 && (
+              <button
+                onClick={() => { setActiveTab('list'); setSelectedDateFilter(null); }}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 mt-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-colors"
+                title="Ver tarefas atrasadas"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <AlertTriangle size={15} /> Atrasadas
+                </span>
+                <span className="text-xs font-bold bg-rose-500/20 px-2 py-0.5 rounded-full">{overdueCount}</span>
+              </button>
+            )}
           </div>
 
           <div className="mb-6">
@@ -297,10 +467,8 @@ export default function App() {
           </div>
         </nav>
 
-        <div className="p-4 w-64 mt-auto">
-          <div className="space-y-1">
-             {/* <NavItem icon={<Settings size={16} />} label="Configurações" /> */}
-          </div>
+        <div className="p-4 w-64 mt-auto border-t border-white/5">
+          <NavItem icon={<Settings size={16} />} label="Configurações" active={isSettingsOpen} onClick={() => setIsSettingsOpen(true)} />
         </div>
       </motion.aside>
 
@@ -316,35 +484,46 @@ export default function App() {
               <SidebarIcon size={18} />
             </button>
             <h2 className="text-sm font-medium text-zinc-400 capitalize">
-               {activeTab === 'inbox' ? 'Caixa de Entrada' : 
-                activeTab === 'today' ? 'Hoje' : 
-                activeTab === 'calendar' ? format(selectedDate, "d 'de' MMMM", { locale: ptBR }) : 
-                'Todas as Tarefas'}
+               {activeTab === 'inbox' ? 'Caixa de Entrada' :
+                activeTab === 'today' ? 'Hoje' :
+                activeTab === 'calendar' ? format(selectedDate, "d 'de' MMMM", { locale: ptBR }) :
+                activeTab === 'agenda' ? 'Agenda' :
+                activeTab === 'list' ? 'Lista' :
+                activeTab === 'archived' ? 'Arquivados' :
+                'Caixa de Entrada'}
             </h2>
           </div>
           <div className="flex items-center gap-4">
             <div className="relative group">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-indigo-400 transition-colors" />
-              <input 
-                type="text" 
-                placeholder="Pesquisar tarefas..." 
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Pesquisar tarefas..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-4 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:bg-white/10 transition-all w-64"
               />
             </div>
-            <button onClick={() => setIsModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2">
+            <button
+              onClick={() => setIsShortcutsOpen(true)}
+              title="Atalhos de teclado (?)"
+              className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
+            >
+              <Keyboard size={18} />
+            </button>
+            <button onClick={() => { resetModal(); setIsModalOpen(true); }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2">
               <Plus size={14} /> Nova Tarefa
             </button>
           </div>
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
-          <div className="p-8 flex-1 flex flex-col">
+        <div className={`flex-1 min-h-0 flex flex-col ${activeTab === 'calendar' || activeTab === 'agenda' ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}>
+          <div className="p-8 flex-1 flex flex-col min-h-0">
             
             {/* Dashboard Cards & Quick Calendar */}
-            {activeTab !== 'calendar' && (
+            {(activeTab === 'inbox' || activeTab === 'today') && (
               <div className="flex flex-col xl:flex-row gap-8 mb-8 shrink-0">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 h-fit">
                   <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 relative overflow-hidden">
@@ -353,7 +532,7 @@ export default function App() {
                     </div>
                     <h3 className="text-xs font-bold text-emerald-500 uppercase tracking-wider mb-1">Concluídas</h3>
                     <div className="text-3xl font-bold text-white">
-                      {tasks.filter(t => t.completed).length}
+                      {activeTasks.filter(t => t.completed).length}
                     </div>
                     <p className="text-xs text-emerald-500/80 mt-2">Total de tarefas finalizadas</p>
                   </div>
@@ -364,9 +543,9 @@ export default function App() {
                     </div>
                     <h3 className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-1">Pendências</h3>
                     <div className="text-3xl font-bold text-white">
-                      {tasks.filter(t => !t.completed).length}
+                      {activeTasks.filter(t => !t.completed).length}
                     </div>
-                    <p className="text-xs text-amber-500/80 mt-2">{tasks.filter(t => !t.completed && t.urgency === 'critical').length} com prioridade crítica</p>
+                    <p className="text-xs text-amber-500/80 mt-2">{activeTasks.filter(t => !t.completed && t.urgency === 'critical').length} com prioridade crítica</p>
                   </div>
 
                   <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-indigo-500/5 border border-indigo-500/20 relative overflow-hidden">
@@ -375,7 +554,7 @@ export default function App() {
                     </div>
                     <h3 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">Progresso</h3>
                     <div className="text-3xl font-bold text-white">
-                      {tasks.length > 0 ? Math.round((tasks.filter(t => t.completed).length / tasks.length) * 100) : 0}%
+                      {activeTasks.length > 0 ? Math.round((activeTasks.filter(t => t.completed).length / activeTasks.length) * 100) : 0}%
                     </div>
                     <p className="text-xs text-indigo-500/80 mt-2">Taxa de conclusão geral</p>
                   </div>
@@ -390,7 +569,16 @@ export default function App() {
                         { locale: ptBR }
                       )}
                     </h3>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
+                      {quickCalendarOffset !== 0 && (
+                        <button
+                          onClick={() => setQuickCalendarOffset(0)}
+                          className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 px-2 py-1 rounded hover:bg-white/5 transition-colors"
+                          title="Voltar para a semana atual"
+                        >
+                          Ir até hoje
+                        </button>
+                      )}
                       <button onClick={() => setQuickCalendarOffset(prev => prev - 1)} className="p-1 hover:bg-white/5 rounded text-zinc-400 hover:text-white transition-colors">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                       </button>
@@ -415,9 +603,9 @@ export default function App() {
                             setActiveTab('inbox');
                           }}
                           className={`aspect-square flex items-center justify-center text-xs rounded-lg cursor-pointer transition-colors ${
-                            isTodayDate 
-                              ? 'bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-600/20' 
-                              : selectedDateFilter && d.getDate() === selectedDateFilter.getDate()
+                            isTodayDate
+                              ? 'bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-600/20'
+                              : selectedDateFilter && isSameDay(d, selectedDateFilter)
                               ? 'bg-white/10 text-white font-bold border border-white/20'
                               : 'text-zinc-400 hover:bg-white/5'
                           }`}
@@ -441,39 +629,80 @@ export default function App() {
 
             {activeTab === 'inbox' || activeTab === 'today' || activeTab === 'all' ? (
               <div className="flex-1 min-h-[400px]">
-                <KanbanBoard 
-                  tasks={filteredTasks} 
-                  onToggleTask={handleToggleTask} 
+                <KanbanBoard
+                  tasks={filteredTasks}
+                  onToggleTask={handleToggleTask}
                   onClickTask={handleEditTask}
-                  onDragStart={handleDragStart} 
-                  onDrop={handleDrop} 
+                  onToggleNotifications={handleToggleNotifications}
+                  onArchiveCompleted={requestArchiveCompleted}
+                  onDragStart={handleDragStart}
+                  onDrop={handleDrop}
                 />
               </div>
             ) : null}
 
+            {activeTab === 'archived' ? (
+              <ArchivedView
+                tasks={archivedTasks}
+                onUnarchive={handleUnarchiveTask}
+                onClickTask={handleEditTask}
+              />
+            ) : null}
+
+            {activeTab === 'agenda' ? (
+              <AgendaView
+                tasks={activeTasks.filter(matchesCommonFilters)}
+                onEditTask={handleEditTask}
+                onCreateAt={(date, hour) => handleNewTaskAtDate(date, hour)}
+              />
+            ) : null}
+
+            {activeTab === 'list' ? (
+              <TaskListView
+                tasks={activeTasks.filter(matchesCommonFilters)}
+                onView={handleViewTask}
+                onEdit={handleEditTask}
+                onToggle={handleToggleTask}
+              />
+            ) : null}
+
             {activeTab === 'calendar' ? (
-              <div className="space-y-8">
-                <MonthlyCalendar 
-                  currentDate={calendarMonth}
-                  onMonthChange={setCalendarMonth}
-                  selectedDate={selectedDate}
-                  onSelectDate={(d) => {
-                    setSelectedDateFilter(d);
-                    setActiveTab('inbox');
-                  }}
-                  tasks={tasks}
-                />
-                
-                {/* Tasks for selected date */}
-                <div className="bg-[#18181b] border border-white/10 rounded-2xl p-6 shadow-xl">
-                  <h3 className="text-sm font-bold text-white mb-4">
-                    Tarefas para {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}
-                  </h3>
-                  {filteredTasks.length === 0 ? (
-                    <p className="text-xs text-zinc-500 italic">Nenhuma tarefa agendada para esta data.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredTasks.map(task => (
+              <div className="flex gap-6 flex-1 min-h-0">
+                {/* Grade do mês */}
+                <div className="flex-1 min-h-0 bg-[#121214] border border-white/5 rounded-2xl p-5">
+                  <MonthlyCalendar
+                    currentDate={calendarMonth}
+                    onMonthChange={setCalendarMonth}
+                    selectedDate={selectedDate}
+                    onSelectDate={(d) => setSelectedDate(d)}
+                    onSelectTask={handleViewTask}
+                    tasks={activeTasks}
+                  />
+                </div>
+
+                {/* Painel do dia selecionado */}
+                <div className="w-80 shrink-0 flex flex-col min-h-0 bg-[#121214] border border-white/5 rounded-2xl">
+                  <div className="p-4 border-b border-white/5 shrink-0 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-white capitalize">{format(selectedDate, 'EEEE', { locale: ptBR })}</p>
+                      <p className="text-xs text-zinc-500 capitalize">{format(selectedDate, "d 'de' MMMM", { locale: ptBR })}</p>
+                    </div>
+                    <button
+                      onClick={() => handleNewTaskAtDate(selectedDate)}
+                      title="Nova tarefa neste dia"
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 space-y-3">
+                    {calendarDayTasks.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center text-center h-full text-zinc-600 py-10">
+                        <Calendar size={28} className="mb-2 opacity-40" />
+                        <p className="text-xs">Nenhuma tarefa com prazo neste dia.</p>
+                      </div>
+                    ) : (
+                      calendarDayTasks.map(task => (
                         <TaskItem
                           key={task.id}
                           title={task.title}
@@ -482,11 +711,17 @@ export default function App() {
                           tags={task.tags}
                           time={task.dueDate}
                           completed={task.completed}
+                          notificationsEnabled={task.notificationsEnabled}
+                          recurrence={task.recurrence}
+                          subtasks={task.subtasks}
                           onToggle={() => handleToggleTask(task)}
+                          onToggleNotifications={() => handleToggleNotifications(task)}
+                          onEdit={() => handleEditTask(task)}
+                          onClick={() => handleViewTask(task)}
                         />
-                      ))}
-                    </div>
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -552,12 +787,108 @@ export default function App() {
             <label className="block text-xs font-medium text-zinc-400 mb-1">Tags</label>
             <TagInput selectedTags={newTaskTags} onChange={setNewTaskTags} />
           </div>
+          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <button
+                type="button"
+                onClick={() => setNewTaskNotifications(v => !v)}
+                className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${newTaskNotifications ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-500 hover:border-indigo-500'}`}
+              >
+                {newTaskNotifications && <Check size={10} strokeWidth={4} />}
+              </button>
+              <span className="flex items-center gap-2 text-sm text-white">
+                {newTaskNotifications ? <Bell size={14} className="text-indigo-400" /> : <BellOff size={14} className="text-zinc-500" />}
+                Ativar notificações
+              </span>
+            </label>
+            {newTaskNotifications && (
+              <div className="mt-3 pl-7">
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Lembrar antes do prazo</label>
+                <select
+                  value={newTaskReminderMinutes}
+                  onChange={(e) => setNewTaskReminderMinutes(Number(e.target.value))}
+                  className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
+                >
+                  <option value={10}>10 minutos antes</option>
+                  <option value={30}>30 minutos antes</option>
+                  <option value={45}>45 minutos antes</option>
+                  <option value={60}>1 hora antes</option>
+                  <option value={120}>2 horas antes</option>
+                  <option value={180}>3 horas antes</option>
+                  <option value={360}>6 horas antes</option>
+                  <option value={720}>12 horas antes</option>
+                  <option value={1440}>1 dia antes</option>
+                </select>
+                <p className="text-[10px] text-zinc-500 mt-1.5">Você recebe um lembrete com essa antecedência e outro na hora exata do prazo. Requer uma data de entrega definida.</p>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1">Repetir</label>
+            <select
+              value={newTaskRecurrence}
+              onChange={(e) => setNewTaskRecurrence(e.target.value as Recurrence)}
+              className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
+            >
+              <option value="none">Não repetir</option>
+              <option value="daily">Diariamente</option>
+              <option value="weekly">Semanalmente</option>
+              <option value="monthly">Mensalmente</option>
+            </select>
+            {newTaskRecurrence !== 'none' && (
+              <p className="text-[10px] text-zinc-500 mt-1.5">Ao concluir, uma nova ocorrência é criada com o prazo avançado. Requer data de entrega.</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1">Subtarefas</label>
+            {newTaskSubtasks.length > 0 && (
+              <div className="space-y-1.5 mb-2">
+                {newTaskSubtasks.map(sub => (
+                  <div key={sub.id} className="flex items-center gap-2 group">
+                    <button
+                      type="button"
+                      onClick={() => toggleSubtask(sub.id)}
+                      className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${sub.done ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-500 hover:border-indigo-500'}`}
+                    >
+                      {sub.done && <Check size={10} strokeWidth={4} />}
+                    </button>
+                    <span className={`flex-1 text-sm ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`}>{sub.title}</span>
+                    <button type="button" onClick={() => removeSubtask(sub.id)} className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 transition-all">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newSubtaskTitle}
+                onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSubtask(); } }}
+                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                placeholder="Adicionar item do checklist..."
+              />
+              <button type="button" onClick={addSubtask} className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-zinc-300 hover:text-white transition-colors">
+                <Plus size={16} />
+              </button>
+            </div>
+          </div>
+
           <div className="flex justify-between items-center mt-6 pt-4 border-t border-white/10">
             <div>
               {editingTask && (
                 <button
                   type="button"
-                  onClick={handleDeleteTask}
+                  onClick={() => setConfirm({
+                    title: 'Excluir tarefa',
+                    message: `Excluir "${editingTask.title}"? Essa ação não pode ser desfeita.`,
+                    confirmLabel: 'Excluir',
+                    danger: true,
+                    onConfirm: handleDeleteTask,
+                  })}
                   className="px-4 py-2 text-sm font-medium text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
                 >
                   Excluir
@@ -583,10 +914,38 @@ export default function App() {
         </form>
       </Modal>
 
-      <ManageTagsModal 
+      <ManageTagsModal
         isOpen={isManageTagsModalOpen}
         onClose={() => setIsManageTagsModalOpen(false)}
         onTagsUpdated={loadTags}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onDataImported={() => { loadTasks(); loadTags(); }}
+      />
+
+      <TaskDetailModal
+        isOpen={!!detailTask}
+        task={detailTask}
+        onClose={() => setDetailTask(null)}
+        onEdit={handleEditFromDetail}
+      />
+
+      <ConfirmDialog
+        isOpen={!!confirm}
+        title={confirm?.title || ''}
+        message={confirm?.message || ''}
+        confirmLabel={confirm?.confirmLabel}
+        danger={confirm?.danger}
+        onConfirm={() => confirm?.onConfirm()}
+        onClose={() => setConfirm(null)}
+      />
+
+      <ShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
       />
       </div>
     </div>
