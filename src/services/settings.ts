@@ -73,6 +73,28 @@ export const settingsService = {
     return await r.invoke('settings:check-updates');
   },
 
+  installUpdate(): void {
+    const r = ipc();
+    if (r) r.invoke('update:install');
+  },
+
+  /** Assina eventos de atualização. Retorna uma função para cancelar a assinatura. */
+  onUpdate(handlers: { progress?: (pct: number) => void; downloaded?: (v: string) => void; error?: (msg: string) => void }): () => void {
+    const r = ipc();
+    if (!r) return () => {};
+    const onProgress = (_e: any, pct: number) => handlers.progress?.(pct);
+    const onDownloaded = (_e: any, v: string) => handlers.downloaded?.(v);
+    const onError = (_e: any, msg: string) => handlers.error?.(msg);
+    r.on('update:progress', onProgress);
+    r.on('update:downloaded', onDownloaded);
+    r.on('update:error', onError);
+    return () => {
+      r.removeListener('update:progress', onProgress);
+      r.removeListener('update:downloaded', onDownloaded);
+      r.removeListener('update:error', onError);
+    };
+  },
+
   reportBug(version: string): void {
     const subject = encodeURIComponent('TuDu · Reporte de bug');
     const body = encodeURIComponent(

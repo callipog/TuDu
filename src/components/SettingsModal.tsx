@@ -38,13 +38,24 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
   const [copied, setCopied] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+  const [updateReady, setUpdateReady] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isElectron = settingsService.isElectron();
+
+  useEffect(() => {
+    const unsub = settingsService.onUpdate({
+      progress: (pct) => setUpdateMsg(`Baixando atualização… ${pct}%`),
+      downloaded: (v) => { setUpdateReady(v); setUpdateMsg(`Versão ${v} baixada.`); },
+      error: () => setUpdateMsg('Falha ao baixar a atualização.'),
+    });
+    return unsub;
+  }, []);
 
   async function handleCheckUpdates() {
     setUpdateMsg('Verificando…');
     const result = await settingsService.checkUpdates();
-    setUpdateMsg(result.message);
+    // Se já houver download em andamento, os eventos cuidam da mensagem.
+    if (result.status !== 'available') setUpdateMsg(result.message);
   }
 
   async function handleResetTasks() {
@@ -238,12 +249,21 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
               </button>
             </div>
             <div className="pt-2 mt-1 border-t border-white/5">
-              <button
-                onClick={handleCheckUpdates}
-                className="w-full flex items-center justify-center gap-2 text-sm font-medium text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg py-2 transition-colors"
-              >
-                <RefreshCw size={14} /> Verificar atualizações
-              </button>
+              {updateReady ? (
+                <button
+                  onClick={() => settingsService.installUpdate()}
+                  className="w-full flex items-center justify-center gap-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg py-2 transition-colors"
+                >
+                  <RefreshCw size={14} /> Reiniciar e instalar {updateReady}
+                </button>
+              ) : (
+                <button
+                  onClick={handleCheckUpdates}
+                  className="w-full flex items-center justify-center gap-2 text-sm font-medium text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg py-2 transition-colors"
+                >
+                  <RefreshCw size={14} /> Verificar atualizações
+                </button>
+              )}
               {updateMsg && <p className="text-[11px] text-zinc-400 mt-2 text-center">{updateMsg}</p>}
             </div>
           </div>

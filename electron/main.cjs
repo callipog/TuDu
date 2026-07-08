@@ -9,6 +9,7 @@ if (!isDev) {
   try {
     autoUpdater = require('electron-updater').autoUpdater;
     autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
   } catch (err) {
     console.error('electron-updater indisponível', err);
   }
@@ -166,6 +167,12 @@ function notifyUpdate(result) {
   new Notification({ title: 'TuDu · Atualizações', body: result.message, icon: iconPath }).show();
 }
 
+function sendUpdate(channel, data) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, data);
+  }
+}
+
 function createTray() {
   let image = nativeImage.createFromPath(iconPath);
   if (!image.isEmpty()) {
@@ -291,8 +298,23 @@ app.whenReady().then(() => {
 
   ipcMain.handle('settings:check-updates', () => runUpdateCheck());
 
-  // Verifica atualizações em segundo plano ao abrir (produção).
+  ipcMain.handle('update:install', () => {
+    if (autoUpdater) {
+      app.isQuitting = true;
+      autoUpdater.quitAndInstall();
+    }
+  });
+
+  // Eventos do updater: reportam progresso e prontidão para a interface.
   if (autoUpdater) {
+    autoUpdater.on('download-progress', (p) => sendUpdate('update:progress', Math.round(p.percent)));
+    autoUpdater.on('update-downloaded', (info) => {
+      sendUpdate('update:downloaded', info.version);
+      notifyUpdate({ message: `Versão ${info.version} baixada. Reinicie para instalar.` });
+    });
+    autoUpdater.on('error', (err) => sendUpdate('update:error', String(err && err.message ? err.message : err)));
+
+    // Verifica atualizações em segundo plano ao abrir (produção).
     autoUpdater.checkForUpdatesAndNotify().catch(() => {});
   }
 
