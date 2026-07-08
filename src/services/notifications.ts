@@ -131,8 +131,19 @@ export const notificationService = {
     }
   },
 
+  /** Dispara uma notificação avulsa (ex.: Pomodoro). */
+  notify(title: string, body: string) {
+    sendNotification(title, body);
+  },
+
   /** Dispara uma notificação de teste imediata (usada na tela de Configurações). */
   test() {
     sendNotification('TuDu', 'Notificação de teste — está funcionando! 🔔');
+  },
+
+  /** Limpa o histórico de notificações já disparadas (usado ao resetar tarefas). */
+  clearFired() {
+    try { localStorage.removeItem(FIRED_KEY); } catch { /* ignore */ }
+    currentTasks = [];
   }
 };

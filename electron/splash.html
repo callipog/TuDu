@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #09090b;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .wrap {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 22px;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+    }
+    .logo {
+      width: 100px; height: 100px;
+      display: flex; align-items: center; justify-content: center;
+      animation: pop 0.6s cubic-bezier(0.22, 1, 0.36, 1), float 3s ease-in-out infinite 0.6s;
+    }
+    .logo img { width: 100%; height: 100%; object-fit: contain; }
+    .fallback {
+      width: 96px; height: 96px;
+      border-radius: 24px;
+      background: linear-gradient(135deg, #6366f1, #4338ca);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 18px 40px -12px rgba(79,70,229,0.6);
+    }
+    .fallback svg { width: 52px; height: 52px; stroke: #fff; }
+    .name {
+      color: #fafafa;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      opacity: 0;
+      animation: fade 0.6s ease forwards 0.2s;
+    }
+    .sub {
+      color: #71717a;
+      font-size: 12px;
+      margin-top: -12px;
+      opacity: 0;
+      animation: fade 0.6s ease forwards 0.35s;
+    }
+    .bar {
+      width: 160px; height: 3px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .bar::after {
+      content: "";
+      display: block;
+      width: 40%; height: 100%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, transparent, #6366f1, transparent);
+      animation: slide 1.2s ease-in-out infinite;
+    }
+    @keyframes slide {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(300%); }
+    }
+    @keyframes pop {
+      0% { transform: scale(0.6); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+    @keyframes fade { to { opacity: 1; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">
+      <img id="app-logo" alt="TuDu" style="display:none" />
+      <div id="logo-fallback" class="fallback">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      </div>
+    </div>
+    <div class="name">TuDu</div>
+    <div class="sub">Carregando suas tarefas...</div>
+    <div class="bar"></div>
+  </div>
+</body>
+</html>

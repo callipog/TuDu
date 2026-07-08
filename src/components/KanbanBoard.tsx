@@ -11,7 +11,8 @@ interface KanbanBoardProps {
   onToggleNotifications?: (task: Task) => void;
   onArchiveCompleted?: () => void;
   onDragStart: (e: React.DragEvent, taskId: string) => void;
-  onDrop: (e: React.DragEvent, status: TaskStatus) => void;
+  /** Move/reordena: coloca taskId na coluna `status`, antes de `targetTaskId` (ou no fim se null). */
+  onReorder: (taskId: string, status: TaskStatus, targetTaskId: string | null) => void;
 }
 
 const columns: { id: TaskStatus; label: string; color: string }[] = [
@@ -22,36 +23,41 @@ const columns: { id: TaskStatus; label: string; color: string }[] = [
   { id: 'done', label: 'Finalizado', color: 'border-emerald-500/20' }
 ];
 
-export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifications, onArchiveCompleted, onDragStart, onDrop }: KanbanBoardProps) {
+export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifications, onArchiveCompleted, onDragStart, onReorder }: KanbanBoardProps) {
   const [dragOverCol, setDragOverCol] = useState<TaskStatus | null>(null);
+  const [dragOverTask, setDragOverTask] = useState<string | null>(null);
 
-  const handleDragOver = (e: React.DragEvent, status: TaskStatus) => {
-    e.preventDefault();
-    setDragOverCol(status);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    setDragOverCol(null);
-  };
-
-  const handleDrop = (e: React.DragEvent, status: TaskStatus) => {
+  const handleColumnDrop = (e: React.DragEvent, status: TaskStatus) => {
     e.preventDefault();
     setDragOverCol(null);
-    onDrop(e, status);
+    setDragOverTask(null);
+    const taskId = e.dataTransfer.getData('text/plain');
+    if (taskId) onReorder(taskId, status, null); // solta no fim da coluna
+  };
+
+  const handleCardDrop = (e: React.DragEvent, status: TaskStatus, targetTaskId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverCol(null);
+    setDragOverTask(null);
+    const taskId = e.dataTransfer.getData('text/plain');
+    if (taskId && taskId !== targetTaskId) onReorder(taskId, status, targetTaskId);
   };
 
   return (
     <div className="flex gap-4 overflow-x-auto pb-4 h-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       {columns.map(col => {
-        const colTasks = tasks.filter(t => (t.status || (t.completed ? 'done' : 'todo')) === col.id);
-        
+        const colTasks = tasks
+          .filter(t => (t.status || (t.completed ? 'done' : 'todo')) === col.id)
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
         return (
-          <div 
-            key={col.id} 
+          <div
+            key={col.id}
             className={`flex-shrink-0 w-72 lg:flex-1 lg:min-w-[200px] flex flex-col bg-[#121214] border ${col.color} rounded-2xl overflow-hidden transition-colors ${dragOverCol === col.id ? 'bg-white/[0.05] border-white/40' : ''}`}
-            onDrop={(e) => handleDrop(e, col.id)}
-            onDragOver={(e) => handleDragOver(e, col.id)}
-            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleColumnDrop(e, col.id)}
+            onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.id); }}
+            onDragLeave={() => setDragOverCol(null)}
           >
             <div className="p-4 border-b border-white/5 flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-white">{col.label}</h3>
@@ -73,17 +79,19 @@ export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifica
             <div className="p-4 flex-1 overflow-y-auto custom-scrollbar space-y-3 min-h-[150px]">
               <AnimatePresence mode="popLayout">
                 {colTasks.map(task => (
-                  <motion.div 
+                  <motion.div
                     layout
                     layoutId={`task-${task.id}`}
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ type: "spring", stiffness: 600, damping: 35 }}
-                    key={task.id} 
-                    draggable 
+                    key={task.id}
+                    draggable
                     onDragStart={(e) => onDragStart(e as unknown as React.DragEvent, task.id)}
-                    className="cursor-grab active:cursor-grabbing"
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverTask(task.id); setDragOverCol(col.id); }}
+                    onDrop={(e) => handleCardDrop(e, col.id, task.id)}
+                    className={`cursor-grab active:cursor-grabbing rounded-2xl ${dragOverTask === task.id ? 'ring-2 ring-indigo-500/60' : ''}`}
                   >
                     <TaskItem
                       title={task.title}
@@ -102,7 +110,7 @@ export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifica
                   </motion.div>
                 ))}
                 {colTasks.length === 0 && (
-                  <motion.div 
+                  <motion.div
                     layout
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}

@@ -48,8 +48,47 @@ function writeSettings(patch) {
 }
 
 let mainWindow = null;
+let splash = null;
 let tray = null;
+let splashStart = 0;
+const MIN_SPLASH_MS = 1100;
 app.isQuitting = false;
+
+function createSplash() {
+  splash = new BrowserWindow({
+    width: 340,
+    height: 400,
+    frame: false,
+    resizable: false,
+    movable: false,
+    center: true,
+    show: true,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: '#09090b',
+    webPreferences: { devTools: false }
+  });
+  splash.loadFile(path.join(__dirname, 'splash.html'));
+  splashStart = Date.now();
+
+  // Injeta o ícone real do app (base64) para não depender de caminho relativo.
+  splash.webContents.on('did-finish-load', () => {
+    try {
+      const b64 = fs.readFileSync(iconPath).toString('base64');
+      splash.webContents.executeJavaScript(
+        `(function(){var el=document.getElementById('app-logo');var fb=document.getElementById('logo-fallback');` +
+        `if(el){el.src='data:image/png;base64,${b64}';el.style.display='block';}if(fb){fb.style.display='none';}})();`
+      ).catch(() => {});
+    } catch (e) { /* mantém o fallback */ }
+  });
+}
+
+function closeSplash() {
+  if (splash && !splash.isDestroyed()) {
+    splash.destroy();
+  }
+  splash = null;
+}
 
 function createWindow(startHidden) {
   mainWindow = new BrowserWindow({
@@ -70,7 +109,13 @@ function createWindow(startHidden) {
   mainWindow.setMenu(null);
 
   mainWindow.once('ready-to-show', () => {
-    if (!startHidden) mainWindow.show();
+    // Garante um tempo mínimo de splash para não "piscar".
+    const elapsed = Date.now() - splashStart;
+    const wait = Math.max(0, MIN_SPLASH_MS - elapsed);
+    setTimeout(() => {
+      closeSplash();
+      if (!startHidden) mainWindow.show();
+    }, wait);
   });
 
   // Fechar a janela: esconde na bandeja se "Fechar para a bandeja" estiver ativo;
@@ -155,6 +200,7 @@ app.whenReady().then(() => {
   const settings = readSettings();
   const startHidden = !!settings.startMinimized || process.argv.includes('--hidden');
 
+  if (!startHidden) createSplash();
   createWindow(startHidden);
   createTray();
 

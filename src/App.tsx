@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Archive, Bell, BellOff, Calendar, CalendarClock, Check, Clock, Inbox, Keyboard, Layout, List, Plus, Search, Settings, Sidebar as SidebarIcon, X } from 'lucide-react';
+import { AlertTriangle, Archive, BarChart3, Bell, BellOff, Calendar, CalendarClock, Check, Clock, Inbox, Keyboard, Layout, List, Plus, Search, Settings, Sidebar as SidebarIcon, Timer, Trash2, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Task, Urgency, Recurrence, SubTask } from './types';
+import { Task, Urgency, Recurrence, RecurrenceEnd, SubTask, TaskStatus } from './types';
 import { taskService } from './services/tasks';
 import { notificationService, DEFAULT_REMINDER_MINUTES } from './services/notifications';
 import { Modal } from './components/Modal';
@@ -14,6 +14,9 @@ import { AgendaView } from './components/AgendaView';
 import { TaskListView } from './components/TaskListView';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ShortcutsModal } from './components/ShortcutsModal';
+import { TrashView } from './components/TrashView';
+import { StatsView } from './components/StatsView';
+import { PomodoroModal } from './components/PomodoroModal';
 import { format, isToday, isSameDay, isPast, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -50,8 +53,14 @@ export default function App() {
   const [newTaskNotifications, setNewTaskNotifications] = useState(false);
   const [newTaskReminderMinutes, setNewTaskReminderMinutes] = useState<number>(DEFAULT_REMINDER_MINUTES);
   const [newTaskRecurrence, setNewTaskRecurrence] = useState<Recurrence>('none');
+  const [newTaskRecurrenceInterval, setNewTaskRecurrenceInterval] = useState<number>(2);
+  const [newTaskRecurrenceWeekdays, setNewTaskRecurrenceWeekdays] = useState<number[]>([]);
+  const [newTaskRecurrenceEndType, setNewTaskRecurrenceEndType] = useState<RecurrenceEnd>('never');
+  const [newTaskRecurrenceCount, setNewTaskRecurrenceCount] = useState<number>(10);
+  const [newTaskRecurrenceEndDate, setNewTaskRecurrenceEndDate] = useState<string>('');
   const [newTaskSubtasks, setNewTaskSubtasks] = useState<SubTask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateFilter, setSelectedDateFilter] = useState<Date | null>(null);
@@ -111,6 +120,7 @@ export default function App() {
     setLoadingTasks(true);
     setError(null);
     try {
+      await taskService.purgeExpired(30); // limpa a lixeira de itens com +30 dias
       const data = await taskService.getTasks();
       setTasks(data);
     } catch (err: any) {
@@ -124,8 +134,9 @@ export default function App() {
     try {
       const newCompleted = !task.completed;
       const newStatus = newCompleted ? 'done' : (task.status === 'done' ? 'todo' : task.status);
-      await taskService.updateTask(task.id, { completed: newCompleted, status: newStatus });
-      let updated = tasks.map(t => t.id === task.id ? { ...t, completed: newCompleted, status: newStatus } : t);
+      const completedAt = newCompleted ? new Date().toISOString() : undefined;
+      await taskService.updateTask(task.id, { completed: newCompleted, status: newStatus, completedAt });
+      let updated = tasks.map(t => t.id === task.id ? { ...t, completed: newCompleted, status: newStatus, completedAt } : t);
 
       // Recorrência: ao concluir, gera a próxima ocorrência automaticamente.
       if (newCompleted && task.recurrence && task.recurrence !== 'none' && task.dueDate) {
@@ -166,6 +177,11 @@ export default function App() {
     setNewTaskNotifications(task.notificationsEnabled ?? false);
     setNewTaskReminderMinutes(task.reminderMinutes ?? DEFAULT_REMINDER_MINUTES);
     setNewTaskRecurrence(task.recurrence ?? 'none');
+    setNewTaskRecurrenceInterval(task.recurrenceInterval ?? 2);
+    setNewTaskRecurrenceWeekdays(task.recurrenceWeekdays ?? []);
+    setNewTaskRecurrenceEndType(task.recurrenceEndType ?? 'never');
+    setNewTaskRecurrenceCount(task.recurrenceCount ?? 10);
+    setNewTaskRecurrenceEndDate(task.recurrenceEndDate ? format(parseISO(task.recurrenceEndDate), 'yyyy-MM-dd') : '');
     setNewTaskSubtasks(task.subtasks ?? []);
     setNewSubtaskTitle('');
     setIsModalOpen(true);
@@ -181,6 +197,11 @@ export default function App() {
     setNewTaskNotifications(false);
     setNewTaskReminderMinutes(DEFAULT_REMINDER_MINUTES);
     setNewTaskRecurrence('none');
+    setNewTaskRecurrenceInterval(2);
+    setNewTaskRecurrenceWeekdays([]);
+    setNewTaskRecurrenceEndType('never');
+    setNewTaskRecurrenceCount(10);
+    setNewTaskRecurrenceEndDate('');
     setNewTaskSubtasks([]);
     setNewSubtaskTitle('');
   }
@@ -216,6 +237,22 @@ export default function App() {
     } catch (err) {
       console.error('Failed to archive completed tasks', err);
     }
+  }
+
+  function handleDeleteArchived(ids: string[]) {
+    if (ids.length === 0) return;
+    setConfirm({
+      title: 'Mover para a lixeira',
+      message: `Mover ${ids.length} tarefa(s) selecionada(s) para a lixeira?`,
+      confirmLabel: 'Mover para lixeira',
+      danger: true,
+      onConfirm: async () => {
+        const now = new Date().toISOString();
+        await Promise.all(ids.map(id => taskService.deleteTask(id)));
+        const idSet = new Set(ids);
+        setTasks(prev => prev.map(t => idSet.has(t.id) ? { ...t, deleted: true, deletedAt: now } : t));
+      },
+    });
   }
 
   async function handleUnarchiveTask(task: Task) {
@@ -256,6 +293,11 @@ export default function App() {
         notificationsEnabled: newTaskNotifications,
         reminderMinutes: newTaskReminderMinutes,
         recurrence: newTaskRecurrence,
+        recurrenceInterval: newTaskRecurrence === 'everyN' ? Math.max(1, newTaskRecurrenceInterval) : undefined,
+        recurrenceWeekdays: newTaskRecurrence === 'weekdays' ? newTaskRecurrenceWeekdays : undefined,
+        recurrenceEndType: newTaskRecurrence !== 'none' ? newTaskRecurrenceEndType : undefined,
+        recurrenceCount: newTaskRecurrence !== 'none' && newTaskRecurrenceEndType === 'count' ? Math.max(1, newTaskRecurrenceCount) : undefined,
+        recurrenceEndDate: newTaskRecurrence !== 'none' && newTaskRecurrenceEndType === 'date' && newTaskRecurrenceEndDate ? new Date(newTaskRecurrenceEndDate).toISOString() : undefined,
         subtasks: newTaskSubtasks,
       };
 
@@ -280,8 +322,10 @@ export default function App() {
   async function handleDeleteTask() {
     if (!editingTask) return;
     try {
-      await taskService.deleteTask(editingTask.id);
-      setTasks(tasks.filter(t => t.id !== editingTask.id));
+      const id = editingTask.id;
+      await taskService.deleteTask(id); // soft delete -> lixeira
+      const now = new Date().toISOString();
+      setTasks(tasks.map(t => t.id === id ? { ...t, deleted: true, deletedAt: now } : t));
       setIsModalOpen(false);
       resetModal();
     } catch (err) {
@@ -289,33 +333,79 @@ export default function App() {
     }
   }
 
-  const handleDragStart = (e: React.DragEvent, taskId: string) => {
-    e.dataTransfer.setData('text/plain', taskId);
-  };
+  async function handleRestoreTask(task: Task) {
+    try {
+      await taskService.restoreTask(task.id);
+      setTasks(tasks.map(t => t.id === task.id ? { ...t, deleted: false, deletedAt: undefined } : t));
+    } catch (err) {
+      console.error('Failed to restore task', err);
+    }
+  }
 
-  const handleDrop = async (e: React.DragEvent, status: any) => {
-    e.preventDefault();
-    const taskId = e.dataTransfer.getData('text/plain');
-    if (!taskId) return;
+  function handleDeletePermanent(ids: string[]) {
+    if (ids.length === 0) return;
+    setConfirm({
+      title: 'Apagar definitivamente',
+      message: `Apagar ${ids.length} tarefa(s) para sempre? Não é possível recuperar.`,
+      confirmLabel: 'Apagar para sempre',
+      danger: true,
+      onConfirm: async () => {
+        await Promise.all(ids.map(id => taskService.permanentlyDelete(id)));
+        const idSet = new Set(ids);
+        setTasks(prev => prev.filter(t => !idSet.has(t.id)));
+      },
+    });
+  }
 
-    const taskIndex = tasks.findIndex(t => t.id === taskId);
-    if (taskIndex === -1) return;
-    const task = tasks[taskIndex];
-    if (task.status === status) return;
+  function handleEmptyTrash() {
+    const count = tasks.filter(t => t.deleted).length;
+    if (count === 0) return;
+    setConfirm({
+      title: 'Esvaziar lixeira',
+      message: `Apagar para sempre as ${count} tarefa(s) da lixeira? Não é possível recuperar.`,
+      confirmLabel: 'Esvaziar',
+      danger: true,
+      onConfirm: async () => {
+        await taskService.emptyTrash();
+        setTasks(prev => prev.filter(t => !t.deleted));
+      },
+    });
+  }
 
+  async function handleReorder(taskId: string, status: TaskStatus, targetTaskId: string | null) {
+    const moving = tasks.find(t => t.id === taskId);
+    if (!moving) return;
     const completed = status === 'done';
-    
-    // Optimistic update
-    const newTasks = [...tasks];
-    newTasks[taskIndex] = { ...task, status, completed };
-    setTasks(newTasks);
+    const completedAt = completed ? (moving.completedAt || new Date().toISOString()) : undefined;
+
+    // Coluna de destino (ativa, sem a tarefa que está sendo movida), ordenada.
+    const col = tasks
+      .filter(t => !t.archived && !t.deleted && (t.status || (t.completed ? 'done' : 'todo')) === status && t.id !== taskId)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    const idx = targetTaskId ? col.findIndex(t => t.id === targetTaskId) : col.length;
+    col.splice(idx < 0 ? col.length : idx, 0, { ...moving, status, completed });
+
+    const updates = col.map((t, i) => ({ id: t.id, order: i }));
+    const orderMap = new Map(updates.map(u => [u.id, u.order]));
+
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) return { ...t, status, completed, completedAt, order: orderMap.get(t.id) ?? t.order };
+      if (orderMap.has(t.id)) return { ...t, order: orderMap.get(t.id) };
+      return t;
+    }));
 
     try {
-      await taskService.updateTask(taskId, { status, completed });
+      await taskService.updateTask(taskId, { status, completed, completedAt });
+      await taskService.saveOrder(updates);
     } catch (err) {
-      console.error('Failed to update task status', err);
-      loadTasks(); // revert
+      console.error('Failed to reorder', err);
+      loadTasks();
     }
+  }
+
+  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+    e.dataTransfer.setData('text/plain', taskId);
   };
 
   // Filter tasks based on active tab
@@ -332,9 +422,11 @@ export default function App() {
     return true;
   };
 
-  // Tarefas ativas (não arquivadas) para as views normais.
-  const activeTasks = tasks.filter(t => !t.archived);
-  const archivedTasks = tasks.filter(t => t.archived);
+  // Tarefas ativas (não arquivadas, não deletadas) para as views normais.
+  const activeTasks = tasks.filter(t => !t.archived && !t.deleted);
+  const archivedTasks = tasks.filter(t => t.archived && !t.deleted);
+  const deletedTasks = tasks.filter(t => t.deleted);
+  const reportTasks = tasks.filter(t => !t.deleted); // ativas + arquivadas, para relatórios
 
   const filteredTasks = activeTasks.filter(task => {
     if (!matchesCommonFilters(task)) return false;
@@ -401,7 +493,9 @@ export default function App() {
             <NavItem icon={<Calendar size={16} />} label="Calendário" active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
             <NavItem icon={<CalendarClock size={16} />} label="Agenda" active={activeTab === 'agenda'} onClick={() => { setActiveTab('agenda'); setSelectedDateFilter(null); }} />
             <NavItem icon={<List size={16} />} label="Lista" active={activeTab === 'list'} onClick={() => { setActiveTab('list'); setSelectedDateFilter(null); }} />
+            <NavItem icon={<BarChart3 size={16} />} label="Relatórios" active={activeTab === 'stats'} onClick={() => { setActiveTab('stats'); setSelectedDateFilter(null); }} />
             <NavItem icon={<Archive size={16} />} label="Arquivados" active={activeTab === 'archived'} onClick={() => { setActiveTab('archived'); setSelectedDateFilter(null); }} />
+            <NavItem icon={<Trash2 size={16} />} label="Lixeira" active={activeTab === 'trash'} onClick={() => { setActiveTab('trash'); setSelectedDateFilter(null); }} />
             {overdueCount > 0 && (
               <button
                 onClick={() => { setActiveTab('list'); setSelectedDateFilter(null); }}
@@ -489,7 +583,9 @@ export default function App() {
                 activeTab === 'calendar' ? format(selectedDate, "d 'de' MMMM", { locale: ptBR }) :
                 activeTab === 'agenda' ? 'Agenda' :
                 activeTab === 'list' ? 'Lista' :
+                activeTab === 'stats' ? 'Relatórios' :
                 activeTab === 'archived' ? 'Arquivados' :
+                activeTab === 'trash' ? 'Lixeira' :
                 'Caixa de Entrada'}
             </h2>
           </div>
@@ -506,6 +602,13 @@ export default function App() {
               />
             </div>
             <button
+              onClick={() => setIsPomodoroOpen(true)}
+              title="Timer de foco (Pomodoro)"
+              className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
+            >
+              <Timer size={18} />
+            </button>
+            <button
               onClick={() => setIsShortcutsOpen(true)}
               title="Atalhos de teclado (?)"
               className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
@@ -519,7 +622,7 @@ export default function App() {
         </header>
 
         {/* Content Area */}
-        <div className={`flex-1 min-h-0 flex flex-col ${activeTab === 'calendar' || activeTab === 'agenda' ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}>
+        <div className={`flex-1 min-h-0 flex flex-col ${activeTab === 'calendar' || activeTab === 'agenda' || activeTab === 'list' || activeTab === 'archived' || activeTab === 'trash' ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}>
           <div className="p-8 flex-1 flex flex-col min-h-0">
             
             {/* Dashboard Cards & Quick Calendar */}
@@ -636,7 +739,7 @@ export default function App() {
                   onToggleNotifications={handleToggleNotifications}
                   onArchiveCompleted={requestArchiveCompleted}
                   onDragStart={handleDragStart}
-                  onDrop={handleDrop}
+                  onReorder={handleReorder}
                 />
               </div>
             ) : null}
@@ -646,6 +749,7 @@ export default function App() {
                 tasks={archivedTasks}
                 onUnarchive={handleUnarchiveTask}
                 onClickTask={handleEditTask}
+                onDeleteMany={handleDeleteArchived}
               />
             ) : null}
 
@@ -663,6 +767,19 @@ export default function App() {
                 onView={handleViewTask}
                 onEdit={handleEditTask}
                 onToggle={handleToggleTask}
+              />
+            ) : null}
+
+            {activeTab === 'stats' ? (
+              <StatsView tasks={reportTasks} />
+            ) : null}
+
+            {activeTab === 'trash' ? (
+              <TrashView
+                tasks={deletedTasks}
+                onRestore={handleRestoreTask}
+                onDeletePermanent={handleDeletePermanent}
+                onEmptyTrash={handleEmptyTrash}
               />
             ) : null}
 
@@ -835,9 +952,77 @@ export default function App() {
               <option value="daily">Diariamente</option>
               <option value="weekly">Semanalmente</option>
               <option value="monthly">Mensalmente</option>
+              <option value="everyN">A cada N dias</option>
+              <option value="weekdays">Dias específicos da semana</option>
             </select>
+
+            {newTaskRecurrence === 'everyN' && (
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-xs text-zinc-400">A cada</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={newTaskRecurrenceInterval}
+                  onChange={(e) => setNewTaskRecurrenceInterval(Number(e.target.value))}
+                  className="w-20 bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark]"
+                />
+                <span className="text-xs text-zinc-400">dia(s)</span>
+              </div>
+            )}
+
+            {newTaskRecurrence === 'weekdays' && (
+              <div className="mt-3 flex gap-1.5">
+                {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((lbl, i) => {
+                  const on = newTaskRecurrenceWeekdays.includes(i);
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setNewTaskRecurrenceWeekdays(on ? newTaskRecurrenceWeekdays.filter(d => d !== i) : [...newTaskRecurrenceWeekdays, i])}
+                      className={`w-8 h-8 rounded-full text-xs font-semibold transition-colors ${on ? 'bg-indigo-600 text-white' : 'bg-white/5 text-zinc-400 hover:text-white'}`}
+                    >
+                      {lbl}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {newTaskRecurrence !== 'none' && (
-              <p className="text-[10px] text-zinc-500 mt-1.5">Ao concluir, uma nova ocorrência é criada com o prazo avançado. Requer data de entrega.</p>
+              <div className="mt-3">
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Termina</label>
+                <select
+                  value={newTaskRecurrenceEndType}
+                  onChange={(e) => setNewTaskRecurrenceEndType(e.target.value as RecurrenceEnd)}
+                  className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
+                >
+                  <option value="never">Nunca</option>
+                  <option value="count">Após um número de ocorrências</option>
+                  <option value="date">Em uma data</option>
+                </select>
+                {newTaskRecurrenceEndType === 'count' && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-zinc-400">Após</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={newTaskRecurrenceCount}
+                      onChange={(e) => setNewTaskRecurrenceCount(Number(e.target.value))}
+                      className="w-20 bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark]"
+                    />
+                    <span className="text-xs text-zinc-400">ocorrência(s)</span>
+                  </div>
+                )}
+                {newTaskRecurrenceEndType === 'date' && (
+                  <input
+                    type="date"
+                    value={newTaskRecurrenceEndDate}
+                    onChange={(e) => setNewTaskRecurrenceEndDate(e.target.value)}
+                    className="mt-2 w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark]"
+                  />
+                )}
+                <p className="text-[10px] text-zinc-500 mt-1.5">Ao concluir, uma nova ocorrência é criada com o prazo avançado. Requer data de entrega.</p>
+              </div>
             )}
           </div>
 
@@ -946,6 +1131,12 @@ export default function App() {
       <ShortcutsModal
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}
+      />
+
+      <PomodoroModal
+        isOpen={isPomodoroOpen}
+        onClose={() => setIsPomodoroOpen(false)}
+        tasks={activeTasks.filter(t => !t.completed)}
       />
       </div>
     </div>

@@ -1,14 +1,27 @@
 import { db } from '../db';
-import { Task, Recurrence } from '../types';
+import { Task } from '../types';
 import { addDays, addWeeks, addMonths, parseISO } from 'date-fns';
 
-function computeNextDue(dueDate: string, recurrence: Recurrence): string {
-  const base = parseISO(dueDate);
-  switch (recurrence) {
+/** Calcula a próxima data de entrega conforme a regra de recorrência. */
+function computeNextDue(task: Task): string {
+  const base = parseISO(task.dueDate!);
+  switch (task.recurrence) {
     case 'daily': return addDays(base, 1).toISOString();
     case 'weekly': return addWeeks(base, 1).toISOString();
     case 'monthly': return addMonths(base, 1).toISOString();
-    default: return dueDate;
+    case 'everyN': return addDays(base, Math.max(1, task.recurrenceInterval || 1)).toISOString();
+    case 'weekdays': {
+      const days = (task.recurrenceWeekdays && task.recurrenceWeekdays.length)
+        ? task.recurrenceWeekdays
+        : [base.getDay()];
+      // Procura o próximo dia da semana marcado (1..7 dias à frente).
+      for (let i = 1; i <= 7; i++) {
+        const cand = addDays(base, i);
+        if (days.includes(cand.getDay())) return cand.toISOString();
+      }
+      return addDays(base, 7).toISOString();
+    }
+    default: return task.dueDate!;
   }
 }
 
@@ -21,6 +34,8 @@ export const taskService = {
     const newTask: Task = {
       notificationsEnabled: false,
       archived: false,
+      deleted: false,
+      order: -Date.now(),
       ...task,
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString()
@@ -36,15 +51,51 @@ export const taskService = {
     return updated;
   },
 
+  /** Envia a tarefa para a lixeira (soft delete). */
   async deleteTask(id: string): Promise<void> {
+    await db.tasks.update(id, { deleted: true, deletedAt: new Date().toISOString() });
+  },
+
+  /** Restaura uma tarefa da lixeira. */
+  async restoreTask(id: string): Promise<void> {
+    await db.tasks.update(id, { deleted: false, deletedAt: undefined });
+  },
+
+  /** Remove a tarefa em definitivo (não recuperável). */
+  async permanentlyDelete(id: string): Promise<void> {
     await db.tasks.delete(id);
+  },
+
+  /** Esvazia a lixeira (remove em definitivo todas as tarefas deletadas). */
+  async emptyTrash(): Promise<void> {
+    await db.tasks.filter(t => t.deleted === true).delete();
+  },
+
+  /** Remove em definitivo tarefas na lixeira há mais de `days` dias. Retorna quantas. */
+  async purgeExpired(days = 30): Promise<number> {
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    const expired = await db.tasks
+      .filter(t => t.deleted === true && !!t.deletedAt && parseISO(t.deletedAt).getTime() < cutoff)
+      .toArray();
+    await Promise.all(expired.map(t => db.tasks.delete(t.id)));
+    return expired.length;
+  },
+
+  /** Apaga TODAS as tarefas (reset do banco de tarefas). */
+  async clearAllTasks(): Promise<void> {
+    await db.tasks.clear();
+  },
+
+  /** Persiste a nova ordem de um conjunto de tarefas (reordenação no Kanban). */
+  async saveOrder(items: { id: string; order: number }[]): Promise<void> {
+    await Promise.all(items.map(i => db.tasks.update(i.id, { order: i.order })));
   },
 
   /** Arquiva todas as tarefas concluídas (status done / completed) que ainda não estão arquivadas. */
   async archiveCompleted(): Promise<string[]> {
     const now = new Date().toISOString();
     const completed = await db.tasks
-      .filter(t => t.completed === true && t.archived !== true)
+      .filter(t => t.completed === true && t.archived !== true && t.deleted !== true)
       .toArray();
     const ids = completed.map(t => t.id);
     await Promise.all(
@@ -60,11 +111,27 @@ export const taskService = {
 
   /**
    * Cria a próxima ocorrência de uma tarefa recorrente (chamada ao concluir).
-   * Retorna a nova tarefa criada, ou null se a tarefa não for recorrente / sem prazo.
+   * Respeita o término (nunca / após N ocorrências / até uma data).
+   * Retorna a nova tarefa criada, ou null se não houver próxima ocorrência.
    */
   async createRecurringNext(task: Task): Promise<Task | null> {
     if (!task.recurrence || task.recurrence === 'none' || !task.dueDate) return null;
-    const nextDue = computeNextDue(task.dueDate, task.recurrence);
+
+    // Término por contagem: esta conclusão consome uma ocorrência.
+    let nextCount: number | undefined = undefined;
+    if (task.recurrenceEndType === 'count') {
+      const remaining = (task.recurrenceCount ?? 1) - 1;
+      if (remaining <= 0) return null;
+      nextCount = remaining;
+    }
+
+    const nextDue = computeNextDue(task);
+
+    // Término por data.
+    if (task.recurrenceEndType === 'date' && task.recurrenceEndDate) {
+      if (parseISO(nextDue).getTime() > parseISO(task.recurrenceEndDate).getTime()) return null;
+    }
+
     const next: Task = {
       ...task,
       id: crypto.randomUUID(),
@@ -72,8 +139,12 @@ export const taskService = {
       completed: false,
       status: 'todo',
       createdAt: new Date().toISOString(),
+      order: -Date.now(),
       archived: false,
       archivedAt: undefined,
+      deleted: false,
+      deletedAt: undefined,
+      recurrenceCount: nextCount,
       // Reinicia o checklist da próxima ocorrência.
       subtasks: task.subtasks?.map(s => ({ ...s, done: false }))
     };
@@ -81,4 +152,3 @@ export const taskService = {
     return next;
   }
 };
-

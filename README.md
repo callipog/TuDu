@@ -10,13 +10,14 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 ## 🚀 Funcionalidades
 
 ### Tarefas
-- **Quadro Kanban** com colunas Backlog → A Fazer → Em Andamento → Revisão → Finalizado (arraste e solte).
+- **Quadro Kanban** com colunas Backlog → A Fazer → Em Andamento → Revisão → Finalizado; arraste entre colunas e **reordene dentro da própria coluna**.
 - **Criação, edição e detalhes**: crie e edite tarefas; clique para ver todos os atributos em modo somente-leitura, com um lápis para editar.
 - **Níveis de criticidade** (Baixa, Média, Alta, Crítica) com indicadores de cor.
 - **Data de entrega** exibida nos cards, com destaque de **Atrasado**.
 - **Subtarefas / checklist** com barra de progresso.
-- **Tarefas recorrentes** (diária, semanal, mensal): ao concluir, a próxima ocorrência é criada automaticamente.
+- **Tarefas recorrentes**: diária, semanal, mensal, **a cada N dias** ou **dias específicos da semana**, com término opcional (nunca / após N ocorrências / em uma data).
 - **Arquivamento**: arquive de uma vez as finalizadas e consulte-as numa tela dedicada em lista com filtros.
+- **Lixeira**: itens excluídos ficam recuperáveis (restaurar / apagar em definitivo / esvaziar) e são removidos automaticamente após 30 dias.
 
 ### 🔔 Notificações
 - Sininho por tarefa e checkbox para ativar/desativar.
@@ -27,11 +28,13 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Hoje**: tarefas com prazo para o dia atual.
 - **Calendário**: grade mensal com painel do dia selecionado (estilo Google/Notion).
 - **Agenda**: grade semanal ou diária com horários na lateral (estilo Teams/Meet) — clique num bloco para editar ou num espaço vazio para criar.
-- **Lista**: todas as tarefas com seus dados e filtros.
-- **Arquivados**: histórico das tarefas arquivadas.
+- **Lista**: todas as tarefas com seus dados, **ordenação por coluna** (título, status, criticidade, prazo) e **filtros salvos**.
+- **Relatórios**: KPIs e gráficos (concluídas por semana, pendentes por criticidade, tarefas por tag).
+- **Arquivados**: histórico das tarefas arquivadas, com seleção em massa.
 - **Filtros** por texto, tag e criticidade; contador de tarefas **atrasadas** na barra lateral.
 
 ### Produtividade
+- **Timer de foco (Pomodoro)** com ciclos de foco/pausa e notificação ao terminar.
 - **Atalhos de teclado** (Nova tarefa, busca, navegação entre views) com guia acessível pelo header ou tecla `?`.
 - **Gerenciador de tags**: crie tags e edite suas cores.
 - **Mini calendário** semanal com atalho "Ir até hoje".

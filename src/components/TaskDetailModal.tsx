@@ -28,12 +28,21 @@ const statusLabels: Record<string, string> = {
   done: 'Finalizado',
 };
 
-const recurrenceLabels: Record<string, string> = {
-  none: 'Não repete',
-  daily: 'Diariamente',
-  weekly: 'Semanalmente',
-  monthly: 'Mensalmente',
-};
+const WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+function recurrenceText(task: Task): string {
+  switch (task.recurrence) {
+    case 'daily': return 'Diariamente';
+    case 'weekly': return 'Semanalmente';
+    case 'monthly': return 'Mensalmente';
+    case 'everyN': return `A cada ${task.recurrenceInterval || 1} dia(s)`;
+    case 'weekdays': {
+      const days = (task.recurrenceWeekdays || []).slice().sort().map(d => WEEKDAY_LABELS[d]).join(', ');
+      return days ? `Toda(s): ${days}` : 'Dias da semana';
+    }
+    default: return 'Não repete';
+  }
+}
 
 function reminderLabel(min?: number): string {
   if (min == null) return '—';
@@ -85,7 +94,7 @@ export function TaskDetailModal({ isOpen, task, onClose, onEdit }: TaskDetailMod
           <Field label="Repetição">
             <span className="flex items-center gap-1.5">
               {task.recurrence && task.recurrence !== 'none' && <Repeat size={13} className="text-zinc-500" />}
-              {recurrenceLabels[task.recurrence || 'none']}
+              {recurrenceText(task)}
             </span>
           </Field>
           <Field label="Notificações">

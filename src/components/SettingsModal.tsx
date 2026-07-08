@@ -3,7 +3,9 @@ import { Modal } from './Modal';
 import { settingsService, AppSettings, GITHUB_URL, AUTHOR_NAME, REPORT_EMAIL } from '../services/settings';
 import { notificationService } from '../services/notifications';
 import { backupService } from '../services/backup';
-import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Copy, Download, Upload, RefreshCw, MinusSquare } from 'lucide-react';
+import { taskService } from '../services/tasks';
+import { tagService } from '../services/tags';
+import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -43,6 +45,19 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
     setUpdateMsg('Verificando…');
     const result = await settingsService.checkUpdates();
     setUpdateMsg(result.message);
+  }
+
+  async function handleResetTasks() {
+    if (!window.confirm('Apagar TODAS as tarefas (incluindo arquivadas)? Essa ação não pode ser desfeita. Considere exportar um backup antes.')) return;
+    await taskService.clearAllTasks();
+    notificationService.clearFired();
+    onDataImported();
+  }
+
+  function handleResetTags() {
+    if (!window.confirm('Apagar TODAS as tags? As tarefas mantêm os nomes das tags, mas elas somem da lista e voltam à cor padrão.')) return;
+    tagService.clearTags();
+    onDataImported();
   }
 
   async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -231,6 +246,26 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
               </button>
               {updateMsg && <p className="text-[11px] text-zinc-400 mt-2 text-center">{updateMsg}</p>}
             </div>
+          </div>
+        </div>
+
+        {/* Zona de perigo */}
+        <div>
+          <p className="text-[10px] uppercase font-bold text-rose-500/80 tracking-wider mb-2">Zona de perigo</p>
+          <div className="rounded-xl border border-rose-500/20 bg-rose-500/[0.04] p-4 space-y-2">
+            <p className="text-[11px] text-zinc-500">Ações irreversíveis. Exporte um backup antes, se precisar.</p>
+            <button
+              onClick={handleResetTasks}
+              className="w-full flex items-center justify-center gap-2 text-sm font-medium text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500/80 border border-rose-500/30 rounded-lg py-2 transition-colors"
+            >
+              <ListChecks size={15} /> Apagar todas as tarefas
+            </button>
+            <button
+              onClick={handleResetTags}
+              className="w-full flex items-center justify-center gap-2 text-sm font-medium text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500/80 border border-rose-500/30 rounded-lg py-2 transition-colors"
+            >
+              <TagIcon size={15} /> Apagar todas as tags
+            </button>
           </div>
         </div>
       </div>

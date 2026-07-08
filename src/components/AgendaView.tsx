@@ -122,7 +122,7 @@ export function AgendaView({ tasks, onEditTask, onCreateAt }: AgendaViewProps) {
       </div>
 
       {/* Grade de horários */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pb-4">
         <div className="flex" style={{ height: HOUR_HEIGHT * 24 }}>
           <div className="w-16 shrink-0 relative">
             {HOURS.map(h => (
@@ -143,7 +143,7 @@ export function AgendaView({ tasks, onEditTask, onCreateAt }: AgendaViewProps) {
               <div
                 key={day.toISOString()}
                 onClick={(e) => handleColumnClick(day, e)}
-                className={`flex-1 relative border-l border-white/5 cursor-copy ${isToday(day) ? 'bg-indigo-500/[0.03]' : ''}`}
+                className={`flex-1 relative border-l border-b border-white/5 cursor-copy ${isToday(day) ? 'bg-indigo-500/[0.03]' : ''}`}
               >
                 {HOURS.map(h => (
                   <div

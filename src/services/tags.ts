@@ -58,5 +58,10 @@ export const tagService = {
     const tags = this.getTags();
     const newTags = tags.filter(t => t.id !== id);
     this.saveTags(newTags);
+  },
+
+  /** Apaga TODAS as tags (reset). */
+  clearTags(): void {
+    this.saveTags([]);
   }
 };

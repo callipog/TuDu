@@ -31,4 +31,16 @@ db.version(2).stores({
   });
 });
 
+// v3: lixeira (deleted) e ordenação manual (order).
+db.version(3).stores({
+  tasks: 'id, title, urgency, completed, createdAt, status, archived, deleted, order',
+  tags: 'id, name'
+}).upgrade(async (tx) => {
+  let i = 0;
+  await tx.table('tasks').toCollection().modify((task: Task) => {
+    if (task.deleted === undefined) task.deleted = false;
+    if (task.order === undefined) task.order = i++;
+  });
+});
+
 export { db };
