@@ -7,6 +7,7 @@ interface ShortcutsModalProps {
 }
 
 const shortcuts: { keys: string[]; label: string }[] = [
+  { keys: ['Ctrl', 'K'], label: 'Paleta de comandos (buscar ações e tarefas)' },
   { keys: ['N'], label: 'Nova tarefa' },
   { keys: ['/'], label: 'Buscar tarefas' },
   { keys: ['I'], label: 'Ir para Caixa de Entrada' },

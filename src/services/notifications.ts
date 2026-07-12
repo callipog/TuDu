@@ -12,7 +12,7 @@ let currentTasks: Task[] = [];
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
 function isElectron(): boolean {
-  return typeof window !== 'undefined' && !!(window as any).require;
+  return typeof window !== 'undefined' && !!window.tudu;
 }
 
 function loadFired(): Set<string> {
@@ -36,8 +36,7 @@ function saveFired(set: Set<string>) {
 function sendNotification(title: string, body: string) {
   if (isElectron()) {
     try {
-      const { ipcRenderer } = (window as any).require('electron');
-      ipcRenderer.send('show-notification', { title, body });
+      window.tudu!.notify(title, body);
       return;
     } catch {
       // cai no fallback web

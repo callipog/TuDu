@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Archive, BarChart3, Bell, BellOff, Calendar, CalendarClock, Check, Clock, Inbox, Keyboard, Layout, List, Plus, Search, Settings, Sidebar as SidebarIcon, Timer, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Archive, BarChart3, Bell, BellOff, Calendar, CalendarClock, Check, ChevronDown, Clock, FolderKanban, Inbox, Keyboard, Layout, List, Plus, Search, Settings, Sidebar as SidebarIcon, Timer, Trash2, Users, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Task, Urgency, Recurrence, RecurrenceEnd, SubTask, TaskStatus } from './types';
+import { Task, Urgency, Recurrence, RecurrenceEnd, SubTask, TaskStatus, Attachment } from './types';
 import { taskService } from './services/tasks';
 import { notificationService, DEFAULT_REMINDER_MINUTES } from './services/notifications';
+import { parseQuickAdd } from './services/quickAdd';
+import { themeService } from './services/theme';
 import { Modal } from './components/Modal';
 import { MonthlyCalendar } from './components/MonthlyCalendar';
 import { KanbanBoard } from './components/KanbanBoard';
@@ -17,6 +19,22 @@ import { ShortcutsModal } from './components/ShortcutsModal';
 import { TrashView } from './components/TrashView';
 import { StatsView } from './components/StatsView';
 import { PomodoroModal } from './components/PomodoroModal';
+import { ToastHost, Toast } from './components/ToastHost';
+import { CommandPalette } from './components/CommandPalette';
+import { ProjectView } from './components/ProjectView';
+import { TeamView } from './components/TeamView';
+import { AppMenu } from './components/AppMenu';
+import { AttachmentsEditor } from './components/Attachments';
+import { DateTimePicker } from './components/DateTimePicker';
+import { GITHUB_URL, settingsService } from './services/settings';
+import { ManagePersonasModal } from './components/ManagePersonasModal';
+import { ProjectSettingsModal } from './components/ProjectSettingsModal';
+import { ProjectsManagerView } from './components/ProjectsManagerView';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from './db';
+import { projectService } from './services/projects';
+import { personaService } from './services/personas';
+import { columnsFor, statusLabel as resolveStatusLabel } from './services/boards';
 import { format, isToday, isSameDay, isPast, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -50,6 +68,8 @@ export default function App() {
   const [newTaskUrgency, setNewTaskUrgency] = useState<Urgency>('medium');
   const [newTaskTags, setNewTaskTags] = useState<string[]>([]);
   const [newTaskDate, setNewTaskDate] = useState<string>('');
+  const [newTaskStartDate, setNewTaskStartDate] = useState<string>('');
+  const [newTaskAttachments, setNewTaskAttachments] = useState<Attachment[]>([]);
   const [newTaskNotifications, setNewTaskNotifications] = useState(false);
   const [newTaskReminderMinutes, setNewTaskReminderMinutes] = useState<number>(DEFAULT_REMINDER_MINUTES);
   const [newTaskRecurrence, setNewTaskRecurrence] = useState<Recurrence>('none');
@@ -60,7 +80,27 @@ export default function App() {
   const [newTaskRecurrenceEndDate, setNewTaskRecurrenceEndDate] = useState<string>('');
   const [newTaskSubtasks, setNewTaskSubtasks] = useState<SubTask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [modalStep, setModalStep] = useState(0);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false);
+  const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null);
+  const [isPersonasModalOpen, setIsPersonasModalOpen] = useState(false);
+  const [newTaskProjectId, setNewTaskProjectId] = useState<string>('');
+  const [newTaskEpicId, setNewTaskEpicId] = useState<string>('');
+  const [newTaskAssigneeId, setNewTaskAssigneeId] = useState<string>('');
+
+  // Camada gerencial (reativa via Dexie).
+  const projects = useLiveQuery(() => db.projects.orderBy('createdAt').toArray(), []) ?? [];
+  const epics = useLiveQuery(() => db.epics.toArray(), []) ?? [];
+  const personas = useLiveQuery(() => db.personas.orderBy('name').toArray(), []) ?? [];
+  const personaById = (id?: string) => id ? personas.find(p => p.id === id) : undefined;
+  const epicById = (id?: string) => id ? epics.find(e => e.id === id) : undefined;
+  const projectById = (id?: string) => id ? projects.find(p => p.id === id) : undefined;
+  const activeProjects = projects.filter(p => !p.archived);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateFilter, setSelectedDateFilter] = useState<Date | null>(null);
@@ -84,10 +124,16 @@ export default function App() {
   // Atalhos de teclado (inativos ao digitar ou com modal aberto).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // Command Palette: Ctrl/Cmd+K funciona globalmente.
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setIsPaletteOpen(v => !v);
+        return;
+      }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const el = document.activeElement as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
-      if (isModalOpen || isManageTagsModalOpen || isSettingsOpen || isShortcutsOpen || detailTask || confirm) return;
+      if (isModalOpen || isManageTagsModalOpen || isSettingsOpen || isShortcutsOpen || isPaletteOpen || detailTask || confirm) return;
 
       switch (e.key) {
         case 'n': case 'N':
@@ -110,10 +156,47 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isModalOpen, isManageTagsModalOpen, isSettingsOpen, isShortcutsOpen, detailTask, confirm]);
+  }, [isModalOpen, isManageTagsModalOpen, isSettingsOpen, isShortcutsOpen, isPaletteOpen, detailTask, confirm]);
 
   function loadTags() {
     setAvailableTags(tagService.getTags().map(t => t.name));
+  }
+
+  function dismissToast(id: string) {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }
+
+  function handleDeleteProject(id: string, name: string) {
+    setConfirm({
+      title: 'Excluir projeto',
+      message: `Excluir "${name}"? Os épicos serão removidos e as tarefas desvinculadas (elas não são apagadas).`,
+      confirmLabel: 'Excluir',
+      danger: true,
+      onConfirm: async () => {
+        await projectService.remove(id);
+        if (activeProjectId === id) { setActiveProjectId(null); setActiveTab('inbox'); }
+        loadTasks();
+      },
+    });
+  }
+
+  function handleDeletePersona(id: string, name: string) {
+    setConfirm({
+      title: 'Excluir persona',
+      message: `Excluir "${name}"? As tarefas atribuídas a ela ficarão sem responsável.`,
+      confirmLabel: 'Excluir',
+      danger: true,
+      onConfirm: async () => {
+        await personaService.remove(id);
+        loadTasks();
+      },
+    });
+  }
+
+  function showToast(message: string, opts?: { actionLabel?: string; onAction?: () => void }) {
+    const id = crypto.randomUUID();
+    setToasts(prev => [...prev, { id, message, ...opts }]);
+    setTimeout(() => dismissToast(id), 6000);
   }
 
   async function loadTasks() {
@@ -162,6 +245,36 @@ export default function App() {
     setIsModalOpen(true);
   }
 
+  async function handleQuickAdd(input: string) {
+    const parsed = parseQuickAdd(input);
+    if (!parsed.title) return;
+    try {
+      // Registra tags novas com uma cor padrão (não sobrescreve as existentes).
+      parsed.tags.forEach(tag => {
+        if (!tagService.getTags().some(t => t.name.toLowerCase() === tag.toLowerCase())) {
+          tagService.addTag(tag, PREDEFINED_COLORS[Math.floor(Math.random() * PREDEFINED_COLORS.length)]);
+        }
+      });
+      const newTask = await taskService.createTask({
+        title: parsed.title,
+        description: '',
+        urgency: parsed.urgency ?? 'medium',
+        tags: parsed.tags,
+        dueDate: parsed.dueDate ? parsed.dueDate.toISOString() : undefined,
+        notificationsEnabled: false,
+        completed: false,
+      });
+      setTasks(prev => [newTask, ...prev]);
+      loadTags();
+      showToast(`Tarefa criada: "${parsed.title}"`, {
+        actionLabel: 'Editar',
+        onAction: () => handleEditTask(newTask),
+      });
+    } catch (err) {
+      console.error('Failed to quick-add task', err);
+    }
+  }
+
   function handleEditFromDetail(task: Task) {
     setDetailTask(null);
     handleEditTask(task);
@@ -174,6 +287,8 @@ export default function App() {
     setNewTaskUrgency(task.urgency);
     setNewTaskTags(task.tags || []);
     setNewTaskDate(task.dueDate ? format(parseISO(task.dueDate), "yyyy-MM-dd'T'HH:mm") : '');
+    setNewTaskStartDate(task.startDate ? format(parseISO(task.startDate), "yyyy-MM-dd'T'HH:mm") : '');
+    setNewTaskAttachments(task.attachments ?? []);
     setNewTaskNotifications(task.notificationsEnabled ?? false);
     setNewTaskReminderMinutes(task.reminderMinutes ?? DEFAULT_REMINDER_MINUTES);
     setNewTaskRecurrence(task.recurrence ?? 'none');
@@ -184,6 +299,11 @@ export default function App() {
     setNewTaskRecurrenceEndDate(task.recurrenceEndDate ? format(parseISO(task.recurrenceEndDate), 'yyyy-MM-dd') : '');
     setNewTaskSubtasks(task.subtasks ?? []);
     setNewSubtaskTitle('');
+    setNewTaskProjectId(task.projectId ?? '');
+    setNewTaskEpicId(task.epicId ?? '');
+    setNewTaskAssigneeId(task.assigneeId ?? '');
+    setModalStep(0);
+    setModalError(null);
     setIsModalOpen(true);
   }
 
@@ -194,6 +314,8 @@ export default function App() {
     setNewTaskUrgency('medium');
     setNewTaskTags([]);
     setNewTaskDate('');
+    setNewTaskStartDate('');
+    setNewTaskAttachments([]);
     setNewTaskNotifications(false);
     setNewTaskReminderMinutes(DEFAULT_REMINDER_MINUTES);
     setNewTaskRecurrence('none');
@@ -204,6 +326,12 @@ export default function App() {
     setNewTaskRecurrenceEndDate('');
     setNewTaskSubtasks([]);
     setNewSubtaskTitle('');
+    // Ao criar dentro de um projeto, já vincula a ele.
+    setNewTaskProjectId(activeTab === 'project' && activeProjectId ? activeProjectId : '');
+    setNewTaskEpicId('');
+    setNewTaskAssigneeId('');
+    setModalStep(0);
+    setModalError(null);
   }
 
   async function handleToggleNotifications(task: Task) {
@@ -216,41 +344,36 @@ export default function App() {
     }
   }
 
-  function requestArchiveCompleted() {
-    const count = activeTasks.filter(t => t.completed).length;
-    if (count === 0) return;
-    setConfirm({
-      title: 'Arquivar finalizadas',
-      message: `Arquivar ${count} tarefa(s) finalizada(s)? Elas sairão do quadro e ficarão disponíveis na aba Arquivados.`,
-      confirmLabel: 'Arquivar tudo',
-      onConfirm: handleArchiveCompleted,
-    });
-  }
-
-  async function handleArchiveCompleted() {
+  async function requestArchiveCompleted() {
     try {
       const ids = await taskService.archiveCompleted();
       if (ids.length === 0) return;
       const now = new Date().toISOString();
       const idSet = new Set(ids);
-      setTasks(tasks.map(t => idSet.has(t.id) ? { ...t, archived: true, archivedAt: now } : t));
+      setTasks(prev => prev.map(t => idSet.has(t.id) ? { ...t, archived: true, archivedAt: now } : t));
+      showToast(`${ids.length} tarefa(s) arquivada(s).`, {
+        actionLabel: 'Desfazer',
+        onAction: async () => {
+          await Promise.all(ids.map(id => taskService.unarchiveTask(id)));
+          setTasks(prev => prev.map(t => idSet.has(t.id) ? { ...t, archived: false, archivedAt: undefined } : t));
+        },
+      });
     } catch (err) {
       console.error('Failed to archive completed tasks', err);
     }
   }
 
-  function handleDeleteArchived(ids: string[]) {
+  async function handleDeleteArchived(ids: string[]) {
     if (ids.length === 0) return;
-    setConfirm({
-      title: 'Mover para a lixeira',
-      message: `Mover ${ids.length} tarefa(s) selecionada(s) para a lixeira?`,
-      confirmLabel: 'Mover para lixeira',
-      danger: true,
-      onConfirm: async () => {
-        const now = new Date().toISOString();
-        await Promise.all(ids.map(id => taskService.deleteTask(id)));
-        const idSet = new Set(ids);
-        setTasks(prev => prev.map(t => idSet.has(t.id) ? { ...t, deleted: true, deletedAt: now } : t));
+    const now = new Date().toISOString();
+    const idSet = new Set(ids);
+    await Promise.all(ids.map(id => taskService.deleteTask(id)));
+    setTasks(prev => prev.map(t => idSet.has(t.id) ? { ...t, deleted: true, deletedAt: now } : t));
+    showToast(`${ids.length} tarefa(s) movida(s) para a lixeira.`, {
+      actionLabel: 'Desfazer',
+      onAction: async () => {
+        await Promise.all(ids.map(id => taskService.restoreTask(id)));
+        setTasks(prev => prev.map(t => idSet.has(t.id) ? { ...t, deleted: false, deletedAt: undefined } : t));
       },
     });
   }
@@ -279,9 +402,34 @@ export default function App() {
     setNewTaskSubtasks(newTaskSubtasks.filter(s => s.id !== id));
   }
 
+  function validateStep(step: number): string | null {
+    if (step === 0 && !newTaskTitle.trim()) return 'Dê um título para a tarefa.';
+    if (step === 1 && newTaskStartDate && newTaskDate && newTaskDate < newTaskStartDate) {
+      return 'A data de entrega não pode ser anterior ao início.';
+    }
+    return null;
+  }
+
+  function goToStep(step: number) {
+    // Ao avançar, valida as etapas intermediárias.
+    if (step > modalStep) {
+      for (let s = modalStep; s < step; s++) {
+        const err = validateStep(s);
+        if (err) { setModalError(err); setModalStep(s); return; }
+      }
+    }
+    setModalError(null);
+    setModalStep(step);
+  }
+
   async function handleSaveTask(e: React.FormEvent) {
     e.preventDefault();
-    if (!newTaskTitle.trim()) return;
+    // No wizard, "Enter"/próximo apenas avança até a última etapa.
+    if (modalStep < 3) { goToStep(modalStep + 1); return; }
+    for (let s = 0; s <= 3; s++) {
+      const err = validateStep(s);
+      if (err) { setModalError(err); setModalStep(s); return; }
+    }
 
     try {
       const taskData = {
@@ -290,6 +438,8 @@ export default function App() {
         urgency: newTaskUrgency,
         tags: newTaskTags,
         dueDate: newTaskDate ? new Date(newTaskDate).toISOString() : undefined,
+        startDate: newTaskStartDate ? new Date(newTaskStartDate).toISOString() : undefined,
+        attachments: newTaskAttachments,
         notificationsEnabled: newTaskNotifications,
         reminderMinutes: newTaskReminderMinutes,
         recurrence: newTaskRecurrence,
@@ -299,14 +449,20 @@ export default function App() {
         recurrenceCount: newTaskRecurrence !== 'none' && newTaskRecurrenceEndType === 'count' ? Math.max(1, newTaskRecurrenceCount) : undefined,
         recurrenceEndDate: newTaskRecurrence !== 'none' && newTaskRecurrenceEndType === 'date' && newTaskRecurrenceEndDate ? new Date(newTaskRecurrenceEndDate).toISOString() : undefined,
         subtasks: newTaskSubtasks,
+        projectId: newTaskProjectId || undefined,
+        epicId: newTaskProjectId && newTaskEpicId ? newTaskEpicId : undefined,
+        assigneeId: newTaskAssigneeId || undefined,
       };
 
       if (editingTask) {
         await taskService.updateTask(editingTask.id, taskData);
         setTasks(tasks.map(t => t.id === editingTask.id ? { ...t, ...taskData } : t));
       } else {
+        // Em projeto com colunas customizadas, a tarefa entra na 1ª coluna.
+        const firstCol = taskData.projectId ? columnsFor(projectById(taskData.projectId))[0]?.id : undefined;
         const newTask = await taskService.createTask({
           ...taskData,
+          status: firstCol,
           completed: false
         });
         setTasks([newTask, ...tasks]);
@@ -323,11 +479,19 @@ export default function App() {
     if (!editingTask) return;
     try {
       const id = editingTask.id;
+      const title = editingTask.title;
       await taskService.deleteTask(id); // soft delete -> lixeira
       const now = new Date().toISOString();
-      setTasks(tasks.map(t => t.id === id ? { ...t, deleted: true, deletedAt: now } : t));
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, deleted: true, deletedAt: now } : t));
       setIsModalOpen(false);
       resetModal();
+      showToast(`"${title}" movida para a lixeira.`, {
+        actionLabel: 'Desfazer',
+        onAction: async () => {
+          await taskService.restoreTask(id);
+          setTasks(prev => prev.map(t => t.id === id ? { ...t, deleted: false, deletedAt: undefined } : t));
+        },
+      });
     } catch (err) {
       console.error('Failed to delete task', err);
     }
@@ -372,10 +536,10 @@ export default function App() {
     });
   }
 
-  async function handleReorder(taskId: string, status: TaskStatus, targetTaskId: string | null) {
+  async function handleReorder(taskId: string, status: string, targetTaskId: string | null, markCompleted: boolean) {
     const moving = tasks.find(t => t.id === taskId);
     if (!moving) return;
-    const completed = status === 'done';
+    const completed = markCompleted;
     const completedAt = completed ? (moving.completedAt || new Date().toISOString()) : undefined;
 
     // Coluna de destino (ativa, sem a tarefa que está sendo movida), ordenada.
@@ -456,6 +620,12 @@ export default function App() {
   // Contador de tarefas atrasadas (prazo já passou e não concluídas).
   const overdueCount = activeTasks.filter(t => !t.completed && t.dueDate && isPast(parseISO(t.dueDate))).length;
 
+  // Ao criar tarefa dentro de um projeto, ela já fica vinculada (select oculto).
+  const projectLocked = !editingTask && activeTab === 'project' && !!activeProjectId;
+
+  // Rótulo de status resolvendo as colunas do projeto da tarefa.
+  const statusLabelOf = (task: Task) => resolveStatusLabel(task.status, task.completed, columnsFor(projectById(task.projectId)));
+
   const sidebarTags = availableTags;
 
   return (
@@ -468,32 +638,37 @@ export default function App() {
         animate={{ width: sidebarOpen ? 256 : 0, opacity: sidebarOpen ? 1 : 0 }}
         className="flex-shrink-0 h-full border-r border-white/5 bg-white/[0.02] backdrop-blur-2xl overflow-hidden flex flex-col z-50 relative"
       >
-        <div className="p-6 flex items-center gap-3 w-64">
-          <div className="w-8 h-8 flex items-center justify-center shrink-0">
-            <img src="icon.png" alt="TuDu Logo" className="w-full h-full object-contain" />
-          </div>
-          <h1 className="text-lg font-semibold tracking-tight whitespace-nowrap">TuDu</h1>
+        <div className="p-4 w-64">
+          <AppMenu
+            onNewTask={() => { resetModal(); setIsModalOpen(true); }}
+            onCommandPalette={() => setIsPaletteOpen(true)}
+            onManageProjects={() => { setActiveTab('projects'); setSelectedDateFilter(null); }}
+            onManagePersonas={() => setIsPersonasModalOpen(true)}
+            onManageTags={() => setIsManageTagsModalOpen(true)}
+            onPomodoro={() => setIsPomodoroOpen(true)}
+            onSettings={() => setIsSettingsOpen(true)}
+            onShortcuts={() => setIsShortcutsOpen(true)}
+            onCheckUpdates={() => setIsSettingsOpen(true)}
+            onGithub={() => settingsService.openExternal(GITHUB_URL)}
+          />
         </div>
 
-        <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar w-64 pb-8 flex flex-col">
-          <div className="mb-6 shrink-0">
-            <div className="flex justify-between items-center px-2 mb-2">
-              <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Views</p>
-              {(activeTagFilter || activeUrgencyFilter) && (
-                <button 
-                  onClick={() => { setActiveTagFilter(null); setActiveUrgencyFilter(null); }}
-                  className="text-[9px] text-zinc-400 hover:text-white uppercase font-bold tracking-wider"
-                >
-                  Limpar
-                </button>
-              )}
-            </div>
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto scrollbar-hide w-64 pb-4 flex flex-col">
+          <SidebarSection title="Views" storageKey="sb_views" action={(activeTagFilter || activeUrgencyFilter) ? (
+            <button
+              onClick={() => { setActiveTagFilter(null); setActiveUrgencyFilter(null); }}
+              className="text-[9px] text-zinc-400 hover:text-white uppercase font-bold tracking-wider"
+            >
+              Limpar
+            </button>
+          ) : undefined}>
             <NavItem icon={<Inbox size={16} />} label="Caixa de Entrada" active={activeTab === 'inbox'} onClick={() => { setActiveTab('inbox'); setSelectedDateFilter(null); }} />
             <NavItem icon={<Clock size={16} />} label="Hoje" active={activeTab === 'today'} onClick={() => { setActiveTab('today'); setSelectedDateFilter(null); }} />
             <NavItem icon={<Calendar size={16} />} label="Calendário" active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} />
             <NavItem icon={<CalendarClock size={16} />} label="Agenda" active={activeTab === 'agenda'} onClick={() => { setActiveTab('agenda'); setSelectedDateFilter(null); }} />
             <NavItem icon={<List size={16} />} label="Lista" active={activeTab === 'list'} onClick={() => { setActiveTab('list'); setSelectedDateFilter(null); }} />
             <NavItem icon={<BarChart3 size={16} />} label="Relatórios" active={activeTab === 'stats'} onClick={() => { setActiveTab('stats'); setSelectedDateFilter(null); }} />
+            <NavItem icon={<Users size={16} />} label="Equipe" active={activeTab === 'team'} onClick={() => { setActiveTab('team'); setSelectedDateFilter(null); }} />
             <NavItem icon={<Archive size={16} />} label="Arquivados" active={activeTab === 'archived'} onClick={() => { setActiveTab('archived'); setSelectedDateFilter(null); }} />
             <NavItem icon={<Trash2 size={16} />} label="Lixeira" active={activeTab === 'trash'} onClick={() => { setActiveTab('trash'); setSelectedDateFilter(null); }} />
             {overdueCount > 0 && (
@@ -508,21 +683,42 @@ export default function App() {
                 <span className="text-xs font-bold bg-rose-500/20 px-2 py-0.5 rounded-full">{overdueCount}</span>
               </button>
             )}
-          </div>
+          </SidebarSection>
 
-          <div className="mb-6">
-            <div className="flex justify-between items-center px-2 mb-2">
-              <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Tags</p>
+          <SidebarSection title="Projetos" storageKey="sb_projects">
+            <div className="space-y-1 max-h-40 overflow-y-auto scrollbar-hide pr-1">
+              {activeProjects.length > 0 ? activeProjects.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => { setActiveProjectId(p.id); setActiveTab('project'); setSelectedDateFilter(null); }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs transition-colors ${activeTab === 'project' && activeProjectId === p.id ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${p.color}`}></span>
+                  <span className="truncate">{p.name}</span>
+                </button>
+              )) : (
+                <p className="text-xs text-zinc-500 italic px-2">Nenhum projeto ainda.</p>
+              )}
             </div>
-            <div className="space-y-1 max-h-48 overflow-y-auto scrollbar-hide pr-2">
+            <button
+              onClick={() => { setActiveTab('projects'); setSelectedDateFilter(null); }}
+              className="mt-2 px-2 flex items-center gap-2 text-xs text-zinc-400 hover:text-white transition-colors"
+            >
+              <FolderKanban size={14} />
+              <span>Gerenciar Projetos</span>
+            </button>
+          </SidebarSection>
+
+          <SidebarSection title="Tags" storageKey="sb_tags">
+            <div className="space-y-1 max-h-36 overflow-y-auto scrollbar-hide pr-2">
               {sidebarTags.length > 0 ? sidebarTags.map((tag) => {
                 const color = tagService.getTagColor(tag);
                 return (
-                  <TagItem 
-                    key={tag} 
-                    color={color} 
-                    label={tag} 
-                    onColorChange={() => setTasks([...tasks])} 
+                  <TagItem
+                    key={tag}
+                    color={color}
+                    label={tag}
+                    onColorChange={() => setTasks([...tasks])}
                     isOpen={activeTagColorId === tag}
                     onToggleOpen={() => setActiveTagColorId(activeTagColorId === tag ? null : tag)}
                     isActive={activeTagFilter === tag}
@@ -533,22 +729,19 @@ export default function App() {
                 <p className="text-xs text-zinc-500 italic px-2">Nenhuma tag ainda.</p>
               )}
             </div>
-            <button 
+            <button
               onClick={() => setIsManageTagsModalOpen(true)}
               className="mt-3 px-2 flex items-center gap-2 text-xs text-zinc-400 hover:text-white transition-colors"
             >
               <Settings size={14} />
               <span>Gerenciar Tags</span>
             </button>
-          </div>
+          </SidebarSection>
 
-          <div className="mb-6 shrink-0">
-            <div className="px-2 mb-2">
-              <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Criticidade</p>
-            </div>
+          <SidebarSection title="Criticidade" storageKey="sb_urgency">
             <div className="space-y-1 px-2">
                {([{id: 'low', label: 'Baixa', color: 'bg-emerald-500'}, {id: 'medium', label: 'Média', color: 'bg-amber-500'}, {id: 'high', label: 'Alta', color: 'bg-orange-500'}, {id: 'critical', label: 'Crítica', color: 'bg-rose-500'}] as const).map(u => (
-                  <div 
+                  <div
                     key={u.id}
                     onClick={() => setActiveUrgencyFilter(activeUrgencyFilter === u.id ? null : u.id)}
                     className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer transition-colors rounded-md ${activeUrgencyFilter === u.id ? 'bg-white/10 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
@@ -558,10 +751,10 @@ export default function App() {
                   </div>
                ))}
             </div>
-          </div>
+          </SidebarSection>
         </nav>
 
-        <div className="p-4 w-64 mt-auto border-t border-white/5">
+        <div className="px-4 py-3 w-64 mt-auto border-t border-white/5 shrink-0">
           <NavItem icon={<Settings size={16} />} label="Configurações" active={isSettingsOpen} onClick={() => setIsSettingsOpen(true)} />
         </div>
       </motion.aside>
@@ -584,6 +777,9 @@ export default function App() {
                 activeTab === 'agenda' ? 'Agenda' :
                 activeTab === 'list' ? 'Lista' :
                 activeTab === 'stats' ? 'Relatórios' :
+                activeTab === 'team' ? 'Equipe' :
+                activeTab === 'projects' ? 'Projetos' :
+                activeTab === 'project' ? (projectById(activeProjectId || '')?.name || 'Projeto') :
                 activeTab === 'archived' ? 'Arquivados' :
                 activeTab === 'trash' ? 'Lixeira' :
                 'Caixa de Entrada'}
@@ -622,7 +818,7 @@ export default function App() {
         </header>
 
         {/* Content Area */}
-        <div className={`flex-1 min-h-0 flex flex-col ${activeTab === 'calendar' || activeTab === 'agenda' || activeTab === 'list' || activeTab === 'archived' || activeTab === 'trash' ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}>
+        <div className={`flex-1 min-h-0 flex flex-col ${['calendar', 'agenda', 'list', 'archived', 'trash', 'project', 'projects'].includes(activeTab) ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}>
           <div className="p-8 flex-1 flex flex-col min-h-0">
             
             {/* Dashboard Cards & Quick Calendar */}
@@ -740,6 +936,8 @@ export default function App() {
                   onArchiveCompleted={requestArchiveCompleted}
                   onDragStart={handleDragStart}
                   onReorder={handleReorder}
+                  personaById={personaById}
+                  epicById={epicById}
                 />
               </div>
             ) : null}
@@ -767,11 +965,47 @@ export default function App() {
                 onView={handleViewTask}
                 onEdit={handleEditTask}
                 onToggle={handleToggleTask}
+                statusLabel={statusLabelOf}
               />
             ) : null}
 
             {activeTab === 'stats' ? (
               <StatsView tasks={reportTasks} />
+            ) : null}
+
+            {activeTab === 'team' ? (
+              <TeamView
+                personas={personas}
+                tasks={activeTasks}
+                onManagePersonas={() => setIsPersonasModalOpen(true)}
+              />
+            ) : null}
+
+            {activeTab === 'project' && activeProjectId && projectById(activeProjectId) ? (
+              <ProjectView
+                project={projectById(activeProjectId)!}
+                epics={epics.filter(e => e.projectId === activeProjectId)}
+                tasks={activeTasks.filter(t => t.projectId === activeProjectId).filter(matchesCommonFilters)}
+                onEditProject={() => { setSettingsProjectId(activeProjectId); setIsProjectSettingsOpen(true); }}
+                onToggleTask={handleToggleTask}
+                onClickTask={handleEditTask}
+                onToggleNotifications={handleToggleNotifications}
+                onArchiveCompleted={requestArchiveCompleted}
+                onDragStart={handleDragStart}
+                onReorder={handleReorder}
+                personaById={personaById}
+                epicById={epicById}
+                statusLabel={statusLabelOf}
+              />
+            ) : null}
+
+            {activeTab === 'projects' ? (
+              <ProjectsManagerView
+                tasks={activeTasks}
+                onOpenProject={(id) => { setActiveProjectId(id); setActiveTab('project'); }}
+                onEditProject={(id) => { setSettingsProjectId(id); setIsProjectSettingsOpen(true); }}
+                onDeleteProject={handleDeleteProject}
+              />
             ) : null}
 
             {activeTab === 'trash' ? (
@@ -847,252 +1081,273 @@ export default function App() {
       </main>
 
       {/* New Task Modal */}
-      <Modal 
-        isOpen={isModalOpen} 
+      <Modal
+        isOpen={isModalOpen}
         onClose={() => {
           setIsModalOpen(false);
           resetModal();
-        }} 
+        }}
         title={editingTask ? "Editar Tarefa" : "Nova Tarefa"}
+        size="3xl"
       >
-        <form onSubmit={handleSaveTask} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">Título</label>
-            <input
-              type="text"
-              required
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-              placeholder="Ex: Comprar mantimentos"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">Descrição (opcional)</label>
-            <textarea
-              value={newTaskDesc}
-              onChange={(e) => setNewTaskDesc(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors h-20 resize-none"
-              placeholder="Detalhes da tarefa..."
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Urgência</label>
-              <select
-                value={newTaskUrgency}
-                onChange={(e) => setNewTaskUrgency(e.target.value as Urgency)}
-                className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
-              >
-                <option value="low">Baixa</option>
-                <option value="medium">Média</option>
-                <option value="high">Alta</option>
-                <option value="critical">Crítica</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Data de Entrega</label>
-              <input
-                type="datetime-local"
-                value={newTaskDate}
-                onChange={(e) => setNewTaskDate(e.target.value)}
-                className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors [color-scheme:dark]"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">Tags</label>
-            <TagInput selectedTags={newTaskTags} onChange={setNewTaskTags} />
-          </div>
-          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <button
-                type="button"
-                onClick={() => setNewTaskNotifications(v => !v)}
-                className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${newTaskNotifications ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-500 hover:border-indigo-500'}`}
-              >
-                {newTaskNotifications && <Check size={10} strokeWidth={4} />}
-              </button>
-              <span className="flex items-center gap-2 text-sm text-white">
-                {newTaskNotifications ? <Bell size={14} className="text-indigo-400" /> : <BellOff size={14} className="text-zinc-500" />}
-                Ativar notificações
-              </span>
-            </label>
-            {newTaskNotifications && (
-              <div className="mt-3 pl-7">
-                <label className="block text-xs font-medium text-zinc-400 mb-1">Lembrar antes do prazo</label>
-                <select
-                  value={newTaskReminderMinutes}
-                  onChange={(e) => setNewTaskReminderMinutes(Number(e.target.value))}
-                  className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
+        <form onSubmit={handleSaveTask}>
+          {/* Stepper */}
+          <div className="flex items-center gap-1 mb-5">
+            {['Detalhes', 'Prazo', 'Organização', 'Extras'].map((label, i) => (
+              <React.Fragment key={label}>
+                <button
+                  type="button"
+                  onClick={() => goToStep(i)}
+                  className={`flex items-center gap-2 px-2 py-1 rounded-lg transition-colors ${i === modalStep ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
                 >
-                  <option value={10}>10 minutos antes</option>
-                  <option value={30}>30 minutos antes</option>
-                  <option value={45}>45 minutos antes</option>
-                  <option value={60}>1 hora antes</option>
-                  <option value={120}>2 horas antes</option>
-                  <option value={180}>3 horas antes</option>
-                  <option value={360}>6 horas antes</option>
-                  <option value={720}>12 horas antes</option>
-                  <option value={1440}>1 dia antes</option>
-                </select>
-                <p className="text-[10px] text-zinc-500 mt-1.5">Você recebe um lembrete com essa antecedência e outro na hora exata do prazo. Requer uma data de entrega definida.</p>
-              </div>
-            )}
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${i === modalStep ? 'bg-indigo-600 text-white' : i < modalStep ? 'bg-indigo-600/30 text-indigo-300' : 'bg-white/10 text-zinc-400'}`}>
+                    {i < modalStep ? <Check size={13} strokeWidth={3} /> : i + 1}
+                  </span>
+                  <span className="text-sm font-medium hidden sm:block">{label}</span>
+                </button>
+                {i < 3 && <div className="flex-1 h-px bg-white/10" />}
+              </React.Fragment>
+            ))}
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">Repetir</label>
-            <select
-              value={newTaskRecurrence}
-              onChange={(e) => setNewTaskRecurrence(e.target.value as Recurrence)}
-              className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
-            >
-              <option value="none">Não repetir</option>
-              <option value="daily">Diariamente</option>
-              <option value="weekly">Semanalmente</option>
-              <option value="monthly">Mensalmente</option>
-              <option value="everyN">A cada N dias</option>
-              <option value="weekdays">Dias específicos da semana</option>
-            </select>
+          {modalError && (
+            <div className="mb-4 flex items-center gap-2 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
+              <AlertTriangle size={14} className="shrink-0" /> {modalError}
+            </div>
+          )}
 
-            {newTaskRecurrence === 'everyN' && (
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-xs text-zinc-400">A cada</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={newTaskRecurrenceInterval}
-                  onChange={(e) => setNewTaskRecurrenceInterval(Number(e.target.value))}
-                  className="w-20 bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark]"
-                />
-                <span className="text-xs text-zinc-400">dia(s)</span>
-              </div>
-            )}
-
-            {newTaskRecurrence === 'weekdays' && (
-              <div className="mt-3 flex gap-1.5">
-                {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((lbl, i) => {
-                  const on = newTaskRecurrenceWeekdays.includes(i);
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setNewTaskRecurrenceWeekdays(on ? newTaskRecurrenceWeekdays.filter(d => d !== i) : [...newTaskRecurrenceWeekdays, i])}
-                      className={`w-8 h-8 rounded-full text-xs font-semibold transition-colors ${on ? 'bg-indigo-600 text-white' : 'bg-white/5 text-zinc-400 hover:text-white'}`}
-                    >
-                      {lbl}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {newTaskRecurrence !== 'none' && (
-              <div className="mt-3">
-                <label className="block text-xs font-medium text-zinc-400 mb-1">Termina</label>
-                <select
-                  value={newTaskRecurrenceEndType}
-                  onChange={(e) => setNewTaskRecurrenceEndType(e.target.value as RecurrenceEnd)}
-                  className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
-                >
-                  <option value="never">Nunca</option>
-                  <option value="count">Após um número de ocorrências</option>
-                  <option value="date">Em uma data</option>
-                </select>
-                {newTaskRecurrenceEndType === 'count' && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="text-xs text-zinc-400">Após</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={newTaskRecurrenceCount}
-                      onChange={(e) => setNewTaskRecurrenceCount(Number(e.target.value))}
-                      className="w-20 bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark]"
-                    />
-                    <span className="text-xs text-zinc-400">ocorrência(s)</span>
-                  </div>
-                )}
-                {newTaskRecurrenceEndType === 'date' && (
+          <div className="min-h-[300px]">
+            {/* Etapa 1 — Detalhes */}
+            {modalStep === 0 && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Título <span className="text-rose-400">*</span></label>
                   <input
-                    type="date"
-                    value={newTaskRecurrenceEndDate}
-                    onChange={(e) => setNewTaskRecurrenceEndDate(e.target.value)}
-                    className="mt-2 w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark]"
+                    type="text"
+                    autoFocus
+                    value={newTaskTitle}
+                    onChange={(e) => { setNewTaskTitle(e.target.value); if (modalError) setModalError(null); }}
+                    className={`w-full bg-white/5 border rounded-lg px-3 py-2 text-sm text-white focus:outline-none transition-colors ${modalError && !newTaskTitle.trim() ? 'border-rose-500/60' : 'border-white/10 focus:border-indigo-500'}`}
+                    placeholder="Ex: Comprar mantimentos"
                   />
-                )}
-                <p className="text-[10px] text-zinc-500 mt-1.5">Ao concluir, uma nova ocorrência é criada com o prazo avançado. Requer data de entrega.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Descrição</label>
+                  <textarea
+                    value={newTaskDesc}
+                    onChange={(e) => setNewTaskDesc(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors h-28 resize-none"
+                    placeholder="Detalhes da tarefa..."
+                  />
+                </div>
+                <div className="sm:w-1/2">
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Urgência</label>
+                  <select
+                    value={newTaskUrgency}
+                    onChange={(e) => setNewTaskUrgency(e.target.value as Urgency)}
+                    className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
+                  >
+                    <option value="low">Baixa</option>
+                    <option value="medium">Média</option>
+                    <option value="high">Alta</option>
+                    <option value="critical">Crítica</option>
+                  </select>
+                </div>
               </div>
             )}
-          </div>
 
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">Subtarefas</label>
-            {newTaskSubtasks.length > 0 && (
-              <div className="space-y-1.5 mb-2">
-                {newTaskSubtasks.map(sub => (
-                  <div key={sub.id} className="flex items-center gap-2 group">
+            {/* Etapa 2 — Prazo */}
+            {modalStep === 1 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Início</label>
+                    <DateTimePicker value={newTaskStartDate} onChange={(v) => { setNewTaskStartDate(v); if (modalError) setModalError(null); }} placeholder="Sem data de início" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Entrega</label>
+                    <DateTimePicker value={newTaskDate} min={newTaskStartDate} onChange={(v) => { setNewTaskDate(v); if (modalError) setModalError(null); }} placeholder="Sem prazo" />
+                  </div>
+                </div>
+                <p className="text-[11px] text-zinc-500">Deixar o horário em 00:00 significa "sem hora definida".</p>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Repetir</label>
+                  <select
+                    value={newTaskRecurrence}
+                    onChange={(e) => setNewTaskRecurrence(e.target.value as Recurrence)}
+                    className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
+                  >
+                    <option value="none">Não repetir</option>
+                    <option value="daily">Diariamente</option>
+                    <option value="weekly">Semanalmente</option>
+                    <option value="monthly">Mensalmente</option>
+                    <option value="everyN">A cada N dias</option>
+                    <option value="weekdays">Dias específicos da semana</option>
+                  </select>
+
+                  {newTaskRecurrence === 'everyN' && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="text-xs text-zinc-400">A cada</span>
+                      <input type="number" min={1} value={newTaskRecurrenceInterval} onChange={(e) => setNewTaskRecurrenceInterval(Number(e.target.value))} className="w-20 bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                      <span className="text-xs text-zinc-400">dia(s)</span>
+                    </div>
+                  )}
+                  {newTaskRecurrence === 'weekdays' && (
+                    <div className="mt-3 flex gap-1.5">
+                      {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((lbl, i) => {
+                        const on = newTaskRecurrenceWeekdays.includes(i);
+                        return (
+                          <button key={i} type="button" onClick={() => setNewTaskRecurrenceWeekdays(on ? newTaskRecurrenceWeekdays.filter(d => d !== i) : [...newTaskRecurrenceWeekdays, i])} className={`w-8 h-8 rounded-full text-xs font-semibold transition-colors ${on ? 'bg-indigo-600 text-white' : 'bg-white/5 text-zinc-400 hover:text-white'}`}>{lbl}</button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {newTaskRecurrence !== 'none' && (
+                    <div className="mt-3">
+                      <label className="block text-xs font-medium text-zinc-400 mb-1">Termina</label>
+                      <select value={newTaskRecurrenceEndType} onChange={(e) => setNewTaskRecurrenceEndType(e.target.value as RecurrenceEnd)} className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none">
+                        <option value="never">Nunca</option>
+                        <option value="count">Após um número de ocorrências</option>
+                        <option value="date">Em uma data</option>
+                      </select>
+                      {newTaskRecurrenceEndType === 'count' && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-xs text-zinc-400">Após</span>
+                          <input type="number" min={1} value={newTaskRecurrenceCount} onChange={(e) => setNewTaskRecurrenceCount(Number(e.target.value))} className="w-20 bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                          <span className="text-xs text-zinc-400">ocorrência(s)</span>
+                        </div>
+                      )}
+                      {newTaskRecurrenceEndType === 'date' && (
+                        <input type="date" value={newTaskRecurrenceEndDate} onChange={(e) => setNewTaskRecurrenceEndDate(e.target.value)} className="mt-2 w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark]" />
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Etapa 3 — Organização */}
+            {modalStep === 2 && (
+              <div className="space-y-4">
+                {(activeProjects.length > 0 || personas.length > 0) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {activeProjects.length > 0 && !projectLocked && (
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1">Projeto</label>
+                        <select value={newTaskProjectId} onChange={(e) => { setNewTaskProjectId(e.target.value); setNewTaskEpicId(''); }} className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none">
+                          <option value="">Nenhum</option>
+                          {activeProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {newTaskProjectId && (
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1">Épico{projectLocked ? ` · ${projectById(newTaskProjectId)?.name || ''}` : ''}</label>
+                        <select value={newTaskEpicId} onChange={(e) => setNewTaskEpicId(e.target.value)} className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none">
+                          <option value="">Nenhum</option>
+                          {epics.filter(ep => ep.projectId === newTaskProjectId).map(ep => <option key={ep.id} value={ep.id}>{ep.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {personas.length > 0 && (
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1">Responsável</label>
+                        <select value={newTaskAssigneeId} onChange={(e) => setNewTaskAssigneeId(e.target.value)} className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none">
+                          <option value="">Ninguém</option>
+                          {personas.map(p => <option key={p.id} value={p.id}>{p.name}{p.role ? ` · ${p.role}` : ''}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Tags</label>
+                  <TagInput selectedTags={newTaskTags} onChange={setNewTaskTags} />
+                </div>
+              </div>
+            )}
+
+            {/* Etapa 4 — Extras */}
+            {modalStep === 3 && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-sm font-medium text-white">
+                      {newTaskNotifications ? <Bell size={15} className="text-indigo-400" /> : <BellOff size={15} className="text-zinc-500" />}
+                      Notificações
+                    </span>
                     <button
                       type="button"
-                      onClick={() => toggleSubtask(sub.id)}
-                      className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${sub.done ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-500 hover:border-indigo-500'}`}
+                      role="switch"
+                      aria-checked={newTaskNotifications}
+                      onClick={() => setNewTaskNotifications(v => !v)}
+                      className={`relative w-10 h-5 rounded-full transition-colors ${newTaskNotifications ? 'bg-indigo-600' : 'bg-white/10'}`}
                     >
-                      {sub.done && <Check size={10} strokeWidth={4} />}
-                    </button>
-                    <span className={`flex-1 text-sm ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`}>{sub.title}</span>
-                    <button type="button" onClick={() => removeSubtask(sub.id)} className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 transition-all">
-                      <X size={14} />
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${newTaskNotifications ? 'translate-x-5' : ''}`} />
                     </button>
                   </div>
-                ))}
+                  {newTaskNotifications && (
+                    <div className="mt-3">
+                      <label className="block text-xs font-medium text-zinc-400 mb-1">Lembrar antes do prazo</label>
+                      <select value={newTaskReminderMinutes} onChange={(e) => setNewTaskReminderMinutes(Number(e.target.value))} className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none">
+                        <option value={10}>10 minutos antes</option>
+                        <option value={30}>30 minutos antes</option>
+                        <option value={45}>45 minutos antes</option>
+                        <option value={60}>1 hora antes</option>
+                        <option value={120}>2 horas antes</option>
+                        <option value={180}>3 horas antes</option>
+                        <option value={360}>6 horas antes</option>
+                        <option value={720}>12 horas antes</option>
+                        <option value={1440}>1 dia antes</option>
+                      </select>
+                      <p className="text-[11px] text-zinc-500 mt-1.5">Um lembrete com essa antecedência e outro na hora exata do prazo. Requer data de entrega.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Subtarefas</label>
+                  {newTaskSubtasks.length > 0 && (
+                    <div className="space-y-1.5 mb-2">
+                      {newTaskSubtasks.map(sub => (
+                        <div key={sub.id} className="flex items-center gap-2 group">
+                          <button type="button" onClick={() => toggleSubtask(sub.id)} className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${sub.done ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-500 hover:border-indigo-500'}`}>
+                            {sub.done && <Check size={10} strokeWidth={4} />}
+                          </button>
+                          <span className={`flex-1 text-sm ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`}>{sub.title}</span>
+                          <button type="button" onClick={() => removeSubtask(sub.id)} className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 transition-all"><X size={14} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input type="text" value={newSubtaskTitle} onChange={(e) => setNewSubtaskTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSubtask(); } }} className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors" placeholder="Adicionar item do checklist..." />
+                    <button type="button" onClick={addSubtask} className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-zinc-300 hover:text-white transition-colors"><Plus size={16} /></button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Anexos</label>
+                  <AttachmentsEditor value={newTaskAttachments} onChange={setNewTaskAttachments} />
+                </div>
               </div>
             )}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newSubtaskTitle}
-                onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSubtask(); } }}
-                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                placeholder="Adicionar item do checklist..."
-              />
-              <button type="button" onClick={addSubtask} className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-zinc-300 hover:text-white transition-colors">
-                <Plus size={16} />
-              </button>
-            </div>
           </div>
 
+          {/* Rodapé */}
           <div className="flex justify-between items-center mt-6 pt-4 border-t border-white/10">
             <div>
               {editingTask && (
-                <button
-                  type="button"
-                  onClick={() => setConfirm({
-                    title: 'Excluir tarefa',
-                    message: `Excluir "${editingTask.title}"? Essa ação não pode ser desfeita.`,
-                    confirmLabel: 'Excluir',
-                    danger: true,
-                    onConfirm: handleDeleteTask,
-                  })}
-                  className="px-4 py-2 text-sm font-medium text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                >
-                  Excluir
-                </button>
+                <button type="button" onClick={handleDeleteTask} className="px-4 py-2 text-sm font-medium text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors">Excluir</button>
               )}
             </div>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-6 py-2 rounded-lg transition-all shadow-lg shadow-indigo-600/20"
-              >
-                {editingTask ? "Salvar Alterações" : "Criar Tarefa"}
+            <div className="flex gap-2">
+              {modalStep > 0 && (
+                <button type="button" onClick={() => goToStep(modalStep - 1)} className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors">Voltar</button>
+              )}
+              <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-6 py-2 rounded-lg transition-all shadow-lg shadow-indigo-600/20">
+                {modalStep < 3 ? 'Próximo' : (editingTask ? 'Salvar' : 'Criar Tarefa')}
               </button>
             </div>
           </div>
@@ -1116,6 +1371,10 @@ export default function App() {
         task={detailTask}
         onClose={() => setDetailTask(null)}
         onEdit={handleEditFromDetail}
+        assignee={personaById(detailTask?.assigneeId)}
+        project={projectById(detailTask?.projectId)}
+        epic={epicById(detailTask?.epicId)}
+        statusText={detailTask ? statusLabelOf(detailTask) : undefined}
       />
 
       <ConfirmDialog
@@ -1138,7 +1397,58 @@ export default function App() {
         onClose={() => setIsPomodoroOpen(false)}
         tasks={activeTasks.filter(t => !t.completed)}
       />
+
+      <CommandPalette
+        isOpen={isPaletteOpen}
+        onClose={() => setIsPaletteOpen(false)}
+        tasks={activeTasks}
+        onNavigate={(tab) => { setActiveTab(tab); setSelectedDateFilter(null); }}
+        onNewTask={() => { resetModal(); setIsModalOpen(true); }}
+        onOpenTask={(task) => handleViewTask(task)}
+        onOpenPomodoro={() => setIsPomodoroOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onSetTheme={(t) => themeService.set(t)}
+        onQuickAdd={handleQuickAdd}
+      />
+
+      <ManagePersonasModal
+        isOpen={isPersonasModalOpen}
+        onClose={() => setIsPersonasModalOpen(false)}
+        onDeletePersona={handleDeletePersona}
+      />
+
+      <ProjectSettingsModal
+        isOpen={isProjectSettingsOpen}
+        projectId={settingsProjectId}
+        onClose={() => setIsProjectSettingsOpen(false)}
+        onDelete={(id, name) => { setIsProjectSettingsOpen(false); handleDeleteProject(id, name); }}
+      />
+
+      <ToastHost toasts={toasts} onDismiss={dismissToast} />
       </div>
+    </div>
+  );
+}
+
+function SidebarSection({ title, storageKey, action, children }: { title: string; storageKey: string; action?: React.ReactNode; children: React.ReactNode }) {
+  const [open, setOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(storageKey) !== '0'; } catch { return true; }
+  });
+  const toggle = () => setOpen(o => {
+    const next = !o;
+    try { localStorage.setItem(storageKey, next ? '1' : '0'); } catch { /* ignore */ }
+    return next;
+  });
+  return (
+    <div className="mb-4 shrink-0">
+      <div className="flex justify-between items-center px-2 mb-2">
+        <button onClick={toggle} className="flex items-center gap-1 text-[10px] uppercase font-bold text-zinc-500 tracking-wider hover:text-zinc-300 transition-colors">
+          <ChevronDown size={11} className={`transition-transform ${open ? '' : '-rotate-90'}`} />
+          {title}
+        </button>
+        {action}
+      </div>
+      {open && children}
     </div>
   );
 }

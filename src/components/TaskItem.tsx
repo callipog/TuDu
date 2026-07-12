@@ -1,10 +1,11 @@
 import React from 'react';
 import { Check, Bell, BellOff, Pencil, Repeat, ListChecks } from 'lucide-react';
-import { Task, SubTask } from '../types';
+import { Task, SubTask, Persona, Epic } from '../types';
 import { format, parseISO, isPast } from 'date-fns';
 import { tagService } from '../services/tags';
+import { Avatar } from './Avatar';
 
-export function TaskItem({ title, description, urgency, tags, completed, time, notificationsEnabled, recurrence, subtasks, onToggle, onToggleNotifications, onEdit, onClick }: { key?: React.Key; title: string; description?: string; urgency: Task['urgency']; tags: string[]; completed?: boolean; time?: string; notificationsEnabled?: boolean; recurrence?: Task['recurrence']; subtasks?: SubTask[]; onToggle?: () => void; onToggleNotifications?: () => void; onEdit?: () => void; onClick?: () => void }) {
+export function TaskItem({ title, description, urgency, tags, completed, time, notificationsEnabled, recurrence, subtasks, assignee, epic, onToggle, onToggleNotifications, onEdit, onClick }: { key?: React.Key; title: string; description?: string; urgency: Task['urgency']; tags: string[]; completed?: boolean; time?: string; notificationsEnabled?: boolean; recurrence?: Task['recurrence']; subtasks?: SubTask[]; assignee?: Persona; epic?: Epic; onToggle?: () => void; onToggleNotifications?: () => void; onEdit?: () => void; onClick?: () => void }) {
   const urgencyStyles = {
     low: 'hover:border-emerald-500/50',
     medium: 'hover:border-amber-500/50',
@@ -75,8 +76,15 @@ export function TaskItem({ title, description, urgency, tags, completed, time, n
               <ListChecks size={11} /> {subtaskDone}/{subtaskTotal}
             </span>
           )}
+          {epic && (
+            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-zinc-400 bg-white/5 border border-white/10 rounded-md truncate max-w-[120px]" title={`Épico: ${epic.name}`}>
+              <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${epic.color || 'bg-zinc-500'}`}></span>
+              <span className="truncate">{epic.name}</span>
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {assignee && <Avatar persona={assignee} size={22} />}
           {isRecurring && <Repeat size={12} className="text-zinc-500" aria-label="Tarefa recorrente" />}
           {formattedDue && (
             <span className={`text-xs font-mono ${isOverdue ? 'text-rose-500 font-bold' : 'text-zinc-400'}`}>

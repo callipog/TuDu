@@ -11,13 +11,20 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 
 ### Tarefas
 - **Quadro Kanban** com colunas Backlog → A Fazer → Em Andamento → Revisão → Finalizado; arraste entre colunas e **reordene dentro da própria coluna**.
-- **Criação, edição e detalhes**: crie e edite tarefas; clique para ver todos os atributos em modo somente-leitura, com um lápis para editar.
+- **Cadastro em etapas** (wizard): Detalhes → Prazo → Organização → Extras, com validações claras.
+- **Datas de início e entrega** com **seletor de calendário moderno** (hora opcional; sem hora = 00:00) — a entrega nunca pode ser antes do início.
 - **Níveis de criticidade** (Baixa, Média, Alta, Crítica) com indicadores de cor.
-- **Data de entrega** exibida nos cards, com destaque de **Atrasado**.
+- **Anexos**: links, trechos de código, imagens e **arquivos** (pdf, etc.).
 - **Subtarefas / checklist** com barra de progresso.
 - **Tarefas recorrentes**: diária, semanal, mensal, **a cada N dias** ou **dias específicos da semana**, com término opcional (nunca / após N ocorrências / em uma data).
-- **Arquivamento**: arquive de uma vez as finalizadas e consulte-as numa tela dedicada em lista com filtros.
-- **Lixeira**: itens excluídos ficam recuperáveis (restaurar / apagar em definitivo / esvaziar) e são removidos automaticamente após 30 dias.
+- **Arquivamento** e **Lixeira** (recuperável; expurgo automático após 30 dias).
+
+### 📁 Projetos & Equipe (visão gerencial, offline)
+- **Projetos** com épicos, descrição, responsáveis, datas e **colunas de board customizáveis** por projeto.
+- **Tela de gerenciamento** de projetos (lista + detalhe) com **README em Markdown** (importe um `.md`) e arquivos anexos.
+- **Visão Gantt** por projeto: tabela (ID, atividade, início, término, situação, criticidade) + timeline com mês, **número da semana**, dia e dia-da-semana.
+- **Personas** (nome, cargo, cor) atribuíveis às tarefas, com **avatar** nos cards.
+- **Visão Equipe**: carga de trabalho e desempenho por pessoa.
 
 ### 🔔 Notificações
 - Sininho por tarefa e checkbox para ativar/desativar.
@@ -34,12 +41,14 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Filtros** por texto, tag e criticidade; contador de tarefas **atrasadas** na barra lateral.
 
 ### Produtividade
+- **Command Palette** (`Ctrl/Cmd + K`): busque ações e tarefas, e **crie tarefas em linguagem natural** ("pagar boleto amanhã 14h #casa !alta").
 - **Timer de foco (Pomodoro)** com ciclos de foco/pausa e notificação ao terminar.
-- **Atalhos de teclado** (Nova tarefa, busca, navegação entre views) com guia acessível pelo header ou tecla `?`.
+- **Atalhos de teclado** com guia acessível pelo header ou tecla `?`; menu do app no logo.
 - **Gerenciador de tags**: crie tags e edite suas cores.
 - **Mini calendário** semanal com atalho "Ir até hoje".
 
 ### Sistema (Configurações)
+- **Tema** claro, escuro ou **sistema** (segue o Windows).
 - **Iniciar com o Windows** e **Iniciar minimizado**.
 - **Fechar para a bandeja** (opcional): o X esconde na bandeja ou fecha o app.
 - **Bandeja do sistema** com menu (Abrir, Verificar atualizações, Sair).

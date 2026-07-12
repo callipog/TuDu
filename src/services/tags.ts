@@ -42,7 +42,7 @@ export const tagService = {
       this.saveTags(tags);
       return existing;
     }
-    const newTag = { id: Math.random().toString(36).substring(7), name, color };
+    const newTag = { id: crypto.randomUUID(), name, color };
     tags.push(newTag);
     this.saveTags(tags);
     return newTag;

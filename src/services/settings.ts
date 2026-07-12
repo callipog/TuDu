@@ -1,5 +1,5 @@
 export const REPORT_EMAIL = 'guilhermecallipo@gmail.com';
-export const GITHUB_URL = 'https://github.com/callipog/Tudu';
+export const GITHUB_URL = 'https://github.com/callipog/TuDu';
 export const AUTHOR_NAME = 'Guilherme Callipo';
 
 export interface AppSettings {
@@ -10,89 +10,75 @@ export interface AppSettings {
   userDataPath: string;
 }
 
-function ipc(): any | null {
-  if (typeof window !== 'undefined' && (window as any).require) {
-    try {
-      return (window as any).require('electron').ipcRenderer;
-    } catch {
-      return null;
-    }
-  }
-  return null;
+/** Ponte segura exposta pelo preload (contextBridge), ou null fora do Electron. */
+function bridge() {
+  return typeof window !== 'undefined' ? window.tudu ?? null : null;
 }
 
 export const settingsService = {
   isElectron(): boolean {
-    return !!ipc();
+    return !!bridge();
   },
 
   async get(): Promise<AppSettings> {
-    const r = ipc();
-    if (!r) {
+    const b = bridge();
+    if (!b) {
       return { version: 'web', startMinimized: false, openAtLogin: false, closeToTray: true, userDataPath: '—' };
     }
-    return await r.invoke('settings:get');
+    return await b.settings.get();
   },
 
   async setCloseToTray(v: boolean): Promise<boolean> {
-    const r = ipc();
-    if (!r) return true;
-    return await r.invoke('settings:set-close-to-tray', v);
+    const b = bridge();
+    if (!b) return true;
+    return await b.settings.setCloseToTray(v);
   },
 
   async setOpenAtLogin(v: boolean): Promise<boolean> {
-    const r = ipc();
-    if (!r) return false;
-    return await r.invoke('settings:set-open-at-login', v);
+    const b = bridge();
+    if (!b) return false;
+    return await b.settings.setOpenAtLogin(v);
   },
 
   async setStartMinimized(v: boolean): Promise<boolean> {
-    const r = ipc();
-    if (!r) return false;
-    return await r.invoke('settings:set-start-minimized', v);
+    const b = bridge();
+    if (!b) return false;
+    return await b.settings.setStartMinimized(v);
   },
 
-  async openPath(p: string): Promise<void> {
-    const r = ipc();
-    if (!r) return;
-    await r.invoke('settings:open-path', p);
+  async openDataFolder(): Promise<void> {
+    await bridge()?.settings.openDataFolder();
   },
 
   async openExternal(url: string): Promise<void> {
-    const r = ipc();
-    if (!r) {
+    const b = bridge();
+    if (!b) {
       window.open(url, '_blank');
       return;
     }
-    await r.invoke('settings:open-external', url);
+    await b.settings.openExternal(url);
   },
 
   async checkUpdates(): Promise<{ status: string; message: string }> {
-    const r = ipc();
-    if (!r) return { status: 'unavailable', message: 'Atualizações só funcionam no app desktop instalado.' };
-    return await r.invoke('settings:check-updates');
+    const b = bridge();
+    if (!b) return { status: 'unavailable', message: 'Atualizações só funcionam no app desktop instalado.' };
+    return await b.settings.checkUpdates();
   },
 
   installUpdate(): void {
-    const r = ipc();
-    if (r) r.invoke('update:install');
+    bridge()?.updates.install();
   },
 
   /** Assina eventos de atualização. Retorna uma função para cancelar a assinatura. */
   onUpdate(handlers: { progress?: (pct: number) => void; downloaded?: (v: string) => void; error?: (msg: string) => void }): () => void {
-    const r = ipc();
-    if (!r) return () => {};
-    const onProgress = (_e: any, pct: number) => handlers.progress?.(pct);
-    const onDownloaded = (_e: any, v: string) => handlers.downloaded?.(v);
-    const onError = (_e: any, msg: string) => handlers.error?.(msg);
-    r.on('update:progress', onProgress);
-    r.on('update:downloaded', onDownloaded);
-    r.on('update:error', onError);
-    return () => {
-      r.removeListener('update:progress', onProgress);
-      r.removeListener('update:downloaded', onDownloaded);
-      r.removeListener('update:error', onError);
-    };
+    const b = bridge();
+    if (!b) return () => {};
+    const unsubs = [
+      handlers.progress ? b.updates.onProgress(handlers.progress) : null,
+      handlers.downloaded ? b.updates.onDownloaded(handlers.downloaded) : null,
+      handlers.error ? b.updates.onError(handlers.error) : null,
+    ];
+    return () => unsubs.forEach(u => u?.());
   },
 
   reportBug(version: string): void {

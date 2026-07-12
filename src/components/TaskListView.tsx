@@ -9,6 +9,7 @@ interface TaskListViewProps {
   onView: (task: Task) => void;
   onEdit: (task: Task) => void;
   onToggle: (task: Task) => void;
+  statusLabel?: (task: Task) => string;
 }
 
 type SortKey = 'title' | 'status' | 'urgency' | 'due';
@@ -49,7 +50,7 @@ function loadSaved(): SavedFilter[] {
   return [];
 }
 
-export function TaskListView({ tasks, onView, onEdit, onToggle }: TaskListViewProps) {
+export function TaskListView({ tasks, onView, onEdit, onToggle, statusLabel }: TaskListViewProps) {
   const [search, setSearch] = useState('');
   const [urgencyFilter, setUrgencyFilter] = useState<Urgency | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
@@ -90,7 +91,7 @@ export function TaskListView({ tasks, onView, onEdit, onToggle }: TaskListViewPr
       switch (sortKey) {
         case 'title': return a.title.localeCompare(b.title) * dir;
         case 'urgency': return (urgencyMeta[a.urgency].rank - urgencyMeta[b.urgency].rank) * dir;
-        case 'status': return (statusMeta[statusOf(a)].rank - statusMeta[statusOf(b)].rank) * dir;
+        case 'status': return ((statusMeta[statusOf(a)]?.rank ?? 99) - (statusMeta[statusOf(b)]?.rank ?? 99)) * dir;
         case 'due': {
           if (!a.dueDate && !b.dueDate) return 0;
           if (!a.dueDate) return 1;
@@ -206,7 +207,7 @@ export function TaskListView({ tasks, onView, onEdit, onToggle }: TaskListViewPr
           <div className="divide-y divide-white/5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
             {filtered.map(task => {
               const meta = urgencyMeta[task.urgency];
-              const status = statusMeta[statusOf(task)].label;
+              const status = statusLabel ? statusLabel(task) : (statusMeta[statusOf(task)]?.label ?? statusOf(task));
               const overdue = task.dueDate ? isPast(parseISO(task.dueDate)) && !task.completed : false;
               const subDone = task.subtasks?.filter(s => s.done).length ?? 0;
               const subTotal = task.subtasks?.length ?? 0;

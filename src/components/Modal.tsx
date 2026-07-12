@@ -2,14 +2,26 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+type ModalSize = 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
+
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  size?: ModalSize;
 }
 
-export function Modal({ isOpen, onClose, title, children }: ModalProps) {
+const sizeClass: Record<ModalSize, string> = {
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-xl',
+  '2xl': 'max-w-2xl',
+  '3xl': 'max-w-3xl',
+  '4xl': 'max-w-4xl',
+};
+
+export function Modal({ isOpen, onClose, title, children, size = 'lg' }: ModalProps) {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -25,9 +37,9 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-lg rounded-2xl bg-[#09090b] border border-white/10 shadow-2xl z-10"
+            className={`relative w-full ${sizeClass[size]} max-h-[90vh] flex flex-col rounded-2xl bg-[#09090b] border border-white/10 shadow-2xl z-10`}
           >
-            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 shrink-0">
               <h2 className="text-lg font-semibold text-white">{title}</h2>
               <button
                 onClick={onClose}
@@ -36,7 +48,7 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
                 <X size={18} />
               </button>
             </div>
-            <div className="p-6">
+            <div className="p-6 overflow-y-auto custom-scrollbar">
               {children}
             </div>
           </motion.div>

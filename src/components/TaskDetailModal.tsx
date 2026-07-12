@@ -1,7 +1,9 @@
 import React from 'react';
 import { Modal } from './Modal';
-import { Task } from '../types';
+import { Task, Persona, Project, Epic } from '../types';
 import { tagService } from '../services/tags';
+import { Avatar } from './Avatar';
+import { AttachmentsView } from './Attachments';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Pencil, Bell, BellOff, Repeat, Check, CalendarClock } from 'lucide-react';
@@ -11,6 +13,10 @@ interface TaskDetailModalProps {
   task: Task | null;
   onClose: () => void;
   onEdit: (task: Task) => void;
+  assignee?: Persona;
+  project?: Project;
+  epic?: Epic;
+  statusText?: string;
 }
 
 const urgencyLabels: Record<Task['urgency'], { label: string; dot: string }> = {
@@ -60,11 +66,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function TaskDetailModal({ isOpen, task, onClose, onEdit }: TaskDetailModalProps) {
+export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, project, epic, statusText }: TaskDetailModalProps) {
   if (!task) return null;
 
   const urgency = urgencyLabels[task.urgency];
-  const status = statusLabels[task.status || (task.completed ? 'done' : 'todo')];
+  const status = statusText || statusLabels[task.status || (task.completed ? 'done' : 'todo')] || task.status;
   const subtaskDone = task.subtasks?.filter(s => s.done).length ?? 0;
   const subtaskTotal = task.subtasks?.length ?? 0;
 
@@ -86,6 +92,11 @@ export function TaskDetailModal({ isOpen, task, onClose, onEdit }: TaskDetailMod
               <span className={`w-2 h-2 rounded-full ${urgency.dot}`}></span>{urgency.label}
             </span>
           </Field>
+          <Field label="Início">
+            {task.startDate
+              ? <span className="flex items-center gap-1.5"><CalendarClock size={14} className="text-zinc-500" />{format(parseISO(task.startDate), "dd 'de' MMM yyyy · HH:mm", { locale: ptBR })}</span>
+              : <span className="text-zinc-500">—</span>}
+          </Field>
           <Field label="Data de entrega">
             {task.dueDate
               ? <span className="flex items-center gap-1.5"><CalendarClock size={14} className="text-zinc-500" />{format(parseISO(task.dueDate), "dd 'de' MMM yyyy · HH:mm", { locale: ptBR })}</span>
@@ -105,6 +116,21 @@ export function TaskDetailModal({ isOpen, task, onClose, onEdit }: TaskDetailMod
           <Field label="Criada em">
             {task.createdAt ? format(parseISO(task.createdAt), "dd/MM/yyyy", { locale: ptBR }) : '—'}
           </Field>
+          {project && (
+            <Field label="Projeto">
+              <span className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${project.color}`}></span>{project.name}
+                {epic && <span className="text-zinc-500">· {epic.name}</span>}
+              </span>
+            </Field>
+          )}
+          {assignee && (
+            <Field label="Responsável">
+              <span className="flex items-center gap-2">
+                <Avatar persona={assignee} size={20} />{assignee.name}{assignee.role ? <span className="text-zinc-500">· {assignee.role}</span> : null}
+              </span>
+            </Field>
+          )}
         </div>
 
         {task.tags.length > 0 && (
@@ -130,6 +156,14 @@ export function TaskDetailModal({ isOpen, task, onClose, onEdit }: TaskDetailMod
                   <span className={`text-sm ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`}>{sub.title}</span>
                 </div>
               ))}
+            </div>
+          </Field>
+        )}
+
+        {task.attachments && task.attachments.length > 0 && (
+          <Field label={`Anexos · ${task.attachments.length}`}>
+            <div className="mt-1">
+              <AttachmentsView attachments={task.attachments} />
             </div>
           </Field>
         )}

@@ -67,7 +67,12 @@ function createSplash() {
     skipTaskbar: true,
     alwaysOnTop: true,
     backgroundColor: '#09090b',
-    webPreferences: { devTools: false }
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      devTools: false
+    }
   });
   splash.loadFile(path.join(__dirname, 'splash.html'));
   splashStart = Date.now();
@@ -100,10 +105,23 @@ function createWindow(startHidden) {
     show: false,
     frame: false,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
       devTools: false
     }
+  });
+
+  // Bloqueia navegação para fora do app e abertura de novas janelas.
+  // Links http(s) legítimos abrem no navegador padrão.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const current = mainWindow.webContents.getURL();
+    if (url !== current) event.preventDefault();
   });
 
   mainWindow.maximize();
@@ -201,6 +219,13 @@ function createTray() {
   tray.on('double-click', () => showWindow());
 }
 
+// Garante uma única instância do app; abrir de novo apenas foca a janela.
+if (!app.requestSingleInstanceLock()) {
+  app.isQuitting = true;
+  app.quit();
+}
+app.on('second-instance', () => showWindow());
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
 
@@ -233,14 +258,12 @@ app.whenReady().then(() => {
     if (webWindow) webWindow.close();
   });
 
-  // Dispara um popup nativo do Windows.
-  ipcMain.on('show-notification', (_event, { title, body }) => {
+  // Dispara um popup nativo do Windows (entrada sanitizada e limitada).
+  ipcMain.on('show-notification', (_event, payload) => {
     if (!Notification.isSupported()) return;
-    const notification = new Notification({
-      title: title || 'TuDu',
-      body: body || '',
-      icon: iconPath
-    });
+    const title = String(payload?.title ?? 'TuDu').slice(0, 128);
+    const body = String(payload?.body ?? '').slice(0, 512);
+    const notification = new Notification({ title, body, icon: iconPath });
     notification.on('click', () => showWindow());
     notification.show();
   });
@@ -288,12 +311,20 @@ app.whenReady().then(() => {
     return !!startMinimized;
   });
 
-  ipcMain.handle('settings:open-path', (_event, targetPath) => {
-    return shell.openPath(targetPath || app.getPath('userData'));
+  // Abre somente a pasta de dados do app (não aceita caminho arbitrário do renderer).
+  ipcMain.handle('settings:open-path', () => {
+    return shell.openPath(app.getPath('userData'));
   });
 
+  // Abre apenas URLs http(s)/mailto — nunca file:, cmd, etc.
   ipcMain.handle('settings:open-external', (_event, url) => {
-    return shell.openExternal(url);
+    try {
+      const parsed = new URL(String(url));
+      if (!['https:', 'http:', 'mailto:'].includes(parsed.protocol)) return;
+      return shell.openExternal(parsed.href);
+    } catch {
+      return; // URL inválida: ignora
+    }
   });
 
   ipcMain.handle('settings:check-updates', () => runUpdateCheck());

@@ -5,7 +5,8 @@ import { notificationService } from '../services/notifications';
 import { backupService } from '../services/backup';
 import { taskService } from '../services/tasks';
 import { tagService } from '../services/tags';
-import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon } from 'lucide-react';
+import { themeService, Theme } from '../services/theme';
+import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -39,6 +40,7 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
   const [updateReady, setUpdateReady] = useState<string | null>(null);
+  const [theme, setTheme] = useState<Theme>(themeService.get());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isElectron = settingsService.isElectron();
 
@@ -89,6 +91,7 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
     if (isOpen) {
       settingsService.get().then(setSettings);
       setCopied(false);
+      setTheme(themeService.get());
     }
   }, [isOpen]);
 
@@ -127,6 +130,30 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
             Algumas opções só funcionam no app desktop (fora do navegador).
           </p>
         )}
+
+        {/* Aparência */}
+        <div>
+          <p className={sectionTitle}>Aparência</p>
+          <div className="grid grid-cols-3 gap-3">
+            {([
+              { id: 'dark' as Theme, label: 'Escuro', icon: <Moon size={15} /> },
+              { id: 'light' as Theme, label: 'Claro', icon: <Sun size={15} /> },
+              { id: 'system' as Theme, label: 'Sistema', icon: <Monitor size={15} /> },
+            ]).map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => { themeService.set(opt.id); setTheme(opt.id); }}
+                className={`flex items-center justify-center gap-2 text-sm font-medium rounded-lg py-2.5 border transition-colors ${
+                  theme === opt.id
+                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                    : 'text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 border-white/10'
+                }`}
+              >
+                {opt.icon} {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Inicialização */}
         <div>
@@ -178,7 +205,7 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
               </button>
             </div>
             <button
-              onClick={() => settings && settingsService.openPath(settings.userDataPath)}
+              onClick={() => settingsService.openDataFolder()}
               disabled={!isElectron}
               className="w-full flex items-center justify-center gap-2 text-sm font-medium text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg py-2 transition-colors disabled:opacity-40"
             >

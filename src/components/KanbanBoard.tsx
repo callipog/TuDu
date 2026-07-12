@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Archive } from 'lucide-react';
-import { Task, TaskStatus } from '../types';
+import { Task, Persona, Epic } from '../types';
 import { TaskItem } from './TaskItem';
+import { BoardColumn, DEFAULT_COLUMNS, doneColumnId } from '../services/boards';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface KanbanBoardProps {
@@ -11,50 +12,53 @@ interface KanbanBoardProps {
   onToggleNotifications?: (task: Task) => void;
   onArchiveCompleted?: () => void;
   onDragStart: (e: React.DragEvent, taskId: string) => void;
-  /** Move/reordena: coloca taskId na coluna `status`, antes de `targetTaskId` (ou no fim se null). */
-  onReorder: (taskId: string, status: TaskStatus, targetTaskId: string | null) => void;
+  /** Move/reordena: coloca taskId na coluna `status`, antes de `targetTaskId` (ou no fim). markCompleted indica coluna final. */
+  onReorder: (taskId: string, status: string, targetTaskId: string | null, markCompleted: boolean) => void;
+  personaById?: (id?: string) => Persona | undefined;
+  epicById?: (id?: string) => Epic | undefined;
+  columns?: BoardColumn[];
 }
 
-const columns: { id: TaskStatus; label: string; color: string }[] = [
-  { id: 'backlog', label: 'Backlog', color: 'border-zinc-500/20' },
-  { id: 'todo', label: 'A Fazer', color: 'border-blue-500/20' },
-  { id: 'in_progress', label: 'Em Andamento', color: 'border-amber-500/20' },
-  { id: 'review', label: 'Revisando/Teste', color: 'border-purple-500/20' },
-  { id: 'done', label: 'Finalizado', color: 'border-emerald-500/20' }
-];
+const BORDER: Record<string, string> = {
+  backlog: 'border-zinc-500/20', todo: 'border-blue-500/20', in_progress: 'border-amber-500/20',
+  review: 'border-purple-500/20', done: 'border-emerald-500/20',
+};
 
-export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifications, onArchiveCompleted, onDragStart, onReorder }: KanbanBoardProps) {
-  const [dragOverCol, setDragOverCol] = useState<TaskStatus | null>(null);
+export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifications, onArchiveCompleted, onDragStart, onReorder, personaById, epicById, columns = DEFAULT_COLUMNS }: KanbanBoardProps) {
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [dragOverTask, setDragOverTask] = useState<string | null>(null);
+  const doneId = doneColumnId(columns);
+  const firstId = columns[0]?.id;
 
-  const handleColumnDrop = (e: React.DragEvent, status: TaskStatus) => {
+  const handleColumnDrop = (e: React.DragEvent, status: string) => {
     e.preventDefault();
     setDragOverCol(null);
     setDragOverTask(null);
     const taskId = e.dataTransfer.getData('text/plain');
-    if (taskId) onReorder(taskId, status, null); // solta no fim da coluna
+    if (taskId) onReorder(taskId, status, null, status === doneId);
   };
 
-  const handleCardDrop = (e: React.DragEvent, status: TaskStatus, targetTaskId: string) => {
+  const handleCardDrop = (e: React.DragEvent, status: string, targetTaskId: string) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOverCol(null);
     setDragOverTask(null);
     const taskId = e.dataTransfer.getData('text/plain');
-    if (taskId && taskId !== targetTaskId) onReorder(taskId, status, targetTaskId);
+    if (taskId && taskId !== targetTaskId) onReorder(taskId, status, targetTaskId, status === doneId);
   };
 
   return (
     <div className="flex gap-4 overflow-x-auto pb-4 h-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       {columns.map(col => {
         const colTasks = tasks
-          .filter(t => (t.status || (t.completed ? 'done' : 'todo')) === col.id)
+          .filter(t => (t.status || (t.completed ? doneId : firstId)) === col.id)
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        const colColor = BORDER[col.id] || 'border-white/10';
 
         return (
           <div
             key={col.id}
-            className={`flex-shrink-0 w-72 lg:flex-1 lg:min-w-[200px] flex flex-col bg-[#121214] border ${col.color} rounded-2xl overflow-hidden transition-colors ${dragOverCol === col.id ? 'bg-white/[0.05] border-white/40' : ''}`}
+            className={`flex-shrink-0 w-72 lg:flex-1 lg:min-w-[200px] flex flex-col bg-[#121214] border ${colColor} rounded-2xl overflow-hidden transition-colors ${dragOverCol === col.id ? 'bg-white/[0.05] border-white/40' : ''}`}
             onDrop={(e) => handleColumnDrop(e, col.id)}
             onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.id); }}
             onDragLeave={() => setDragOverCol(null)}
@@ -62,7 +66,7 @@ export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifica
             <div className="p-4 border-b border-white/5 flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-white">{col.label}</h3>
               <div className="flex items-center gap-2">
-                {col.id === 'done' && colTasks.length > 0 && onArchiveCompleted && (
+                {col.id === doneId && colTasks.length > 0 && onArchiveCompleted && (
                   <button
                     onClick={onArchiveCompleted}
                     title="Arquivar todas as tarefas finalizadas"
@@ -103,6 +107,8 @@ export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifica
                       notificationsEnabled={task.notificationsEnabled}
                       recurrence={task.recurrence}
                       subtasks={task.subtasks}
+                      assignee={personaById?.(task.assigneeId)}
+                      epic={epicById?.(task.epicId)}
                       onToggle={() => onToggleTask(task)}
                       onToggleNotifications={() => onToggleNotifications?.(task)}
                       onClick={() => onClickTask?.(task)}

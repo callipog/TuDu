@@ -49,10 +49,31 @@ export const backupService = {
     if (!data || !Array.isArray(data.tasks)) {
       throw new Error('Arquivo de backup inválido: nenhuma tarefa encontrada.');
     }
-    await db.tasks.bulkPut(data.tasks as Task[]);
-    if (Array.isArray(data.tags)) {
-      tagService.saveTags(data.tags as Tag[]);
+
+    // Valida a forma dos registros antes de gravar (protege o banco de
+    // arquivos corrompidos ou maliciosos).
+    const validTasks = (data.tasks as any[]).filter(t =>
+      t && typeof t === 'object' &&
+      typeof t.id === 'string' && t.id.length > 0 && t.id.length <= 64 &&
+      typeof t.title === 'string' &&
+      ['low', 'medium', 'high', 'critical'].includes(t.urgency) &&
+      Array.isArray(t.tags) && t.tags.every((tag: unknown) => typeof tag === 'string')
+    ) as Task[];
+    if (validTasks.length === 0) {
+      throw new Error('Arquivo de backup inválido: nenhuma tarefa com formato válido.');
     }
-    return { tasks: data.tasks.length, tags: Array.isArray(data.tags) ? data.tags.length : 0 };
+
+    const validTags = Array.isArray(data.tags)
+      ? (data.tags as any[]).filter(t =>
+          t && typeof t === 'object' &&
+          typeof t.id === 'string' && typeof t.name === 'string' && typeof t.color === 'string'
+        ) as Tag[]
+      : [];
+
+    await db.tasks.bulkPut(validTasks);
+    if (validTags.length > 0) {
+      tagService.saveTags(validTags);
+    }
+    return { tasks: validTasks.length, tags: validTags.length };
   }
 };

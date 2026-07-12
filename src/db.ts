@@ -1,16 +1,13 @@
 import Dexie, { type EntityTable } from 'dexie';
-import { Task, Tag } from './types';
+import { Task, Tag, Project, Epic, Persona } from './types';
 
 // Create the database
 const db = new Dexie('FocusDeskDatabase') as Dexie & {
-  tasks: EntityTable<
-    Task,
-    'id' // primary key "id" (for the typings only)
-  >;
-  tags: EntityTable<
-    Tag,
-    'id' // primary key "id"
-  >;
+  tasks: EntityTable<Task, 'id'>;
+  tags: EntityTable<Tag, 'id'>;
+  projects: EntityTable<Project, 'id'>;
+  epics: EntityTable<Epic, 'id'>;
+  personas: EntityTable<Persona, 'id'>;
 };
 
 // Schema declaration
@@ -41,6 +38,15 @@ db.version(3).stores({
     if (task.deleted === undefined) task.deleted = false;
     if (task.order === undefined) task.order = i++;
   });
+});
+
+// v4: camada gerencial — projetos, épicos e personas + índices na Task.
+db.version(4).stores({
+  tasks: 'id, title, urgency, completed, createdAt, status, archived, deleted, order, projectId, epicId, assigneeId',
+  tags: 'id, name',
+  projects: 'id, name, status, archived, createdAt',
+  epics: 'id, projectId, createdAt',
+  personas: 'id, name, createdAt'
 });
 
 export { db };
