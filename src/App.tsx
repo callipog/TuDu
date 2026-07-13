@@ -10,6 +10,7 @@ import { Modal } from './components/Modal';
 import { MonthlyCalendar } from './components/MonthlyCalendar';
 import { KanbanBoard } from './components/KanbanBoard';
 import { TaskItem } from './components/TaskItem';
+import { TaskContextMenu, TaskMenuState } from './components/TaskContextMenu';
 import { ArchivedView } from './components/ArchivedView';
 import { TaskDetailModal } from './components/TaskDetailModal';
 import { AgendaView } from './components/AgendaView';
@@ -34,7 +35,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 import { projectService } from './services/projects';
 import { personaService } from './services/personas';
-import { columnsFor, statusLabel as resolveStatusLabel } from './services/boards';
+import { columnsFor, statusLabel as resolveStatusLabel, statusColor as resolveStatusColor } from './services/boards';
 import { format, isToday, isSameDay, isPast, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -89,6 +90,7 @@ export default function App() {
   const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false);
   const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null);
   const [isPersonasModalOpen, setIsPersonasModalOpen] = useState(false);
+  const [taskMenu, setTaskMenu] = useState<TaskMenuState | null>(null);
   const [newTaskProjectId, setNewTaskProjectId] = useState<string>('');
   const [newTaskEpicId, setNewTaskEpicId] = useState<string>('');
   const [newTaskAssigneeId, setNewTaskAssigneeId] = useState<string>('');
@@ -235,6 +237,12 @@ export default function App() {
 
   function handleViewTask(task: Task) {
     setDetailTask(task);
+  }
+
+  function openTaskMenu(e: React.MouseEvent, task: Task) {
+    e.preventDefault();
+    e.stopPropagation();
+    setTaskMenu({ x: e.clientX, y: e.clientY, task });
   }
 
   function handleNewTaskAtDate(date: Date, hour = 9, minute = 0) {
@@ -475,16 +483,13 @@ export default function App() {
     }
   }
 
-  async function handleDeleteTask() {
-    if (!editingTask) return;
+  async function moveTaskToTrash(task: Task) {
     try {
-      const id = editingTask.id;
-      const title = editingTask.title;
+      const id = task.id;
+      const title = task.title;
       await taskService.deleteTask(id); // soft delete -> lixeira
       const now = new Date().toISOString();
       setTasks(prev => prev.map(t => t.id === id ? { ...t, deleted: true, deletedAt: now } : t));
-      setIsModalOpen(false);
-      resetModal();
       showToast(`"${title}" movida para a lixeira.`, {
         actionLabel: 'Desfazer',
         onAction: async () => {
@@ -495,6 +500,14 @@ export default function App() {
     } catch (err) {
       console.error('Failed to delete task', err);
     }
+  }
+
+  async function handleDeleteTask() {
+    if (!editingTask) return;
+    const task = editingTask;
+    setIsModalOpen(false);
+    resetModal();
+    await moveTaskToTrash(task);
   }
 
   async function handleRestoreTask(task: Task) {
@@ -625,6 +638,8 @@ export default function App() {
 
   // Rótulo de status resolvendo as colunas do projeto da tarefa.
   const statusLabelOf = (task: Task) => resolveStatusLabel(task.status, task.completed, columnsFor(projectById(task.projectId)));
+  // Cor do status (ponto/barra), também resolvendo pelas colunas do projeto.
+  const statusColorOf = (task: Task) => resolveStatusColor(task.status, task.completed, columnsFor(projectById(task.projectId)));
 
   const sidebarTags = availableTags;
 
@@ -933,6 +948,7 @@ export default function App() {
                   onToggleTask={handleToggleTask}
                   onClickTask={handleEditTask}
                   onToggleNotifications={handleToggleNotifications}
+                  onContextTask={openTaskMenu}
                   onArchiveCompleted={requestArchiveCompleted}
                   onDragStart={handleDragStart}
                   onReorder={handleReorder}
@@ -965,7 +981,9 @@ export default function App() {
                 onView={handleViewTask}
                 onEdit={handleEditTask}
                 onToggle={handleToggleTask}
+                onContext={openTaskMenu}
                 statusLabel={statusLabelOf}
+                statusColor={statusColorOf}
               />
             ) : null}
 
@@ -990,12 +1008,14 @@ export default function App() {
                 onToggleTask={handleToggleTask}
                 onClickTask={handleEditTask}
                 onToggleNotifications={handleToggleNotifications}
+                onContextTask={openTaskMenu}
                 onArchiveCompleted={requestArchiveCompleted}
                 onDragStart={handleDragStart}
                 onReorder={handleReorder}
                 personaById={personaById}
                 epicById={epicById}
                 statusLabel={statusLabelOf}
+                statusColor={statusColorOf}
               />
             ) : null}
 
@@ -1069,6 +1089,7 @@ export default function App() {
                           onToggleNotifications={() => handleToggleNotifications(task)}
                           onEdit={() => handleEditTask(task)}
                           onClick={() => handleViewTask(task)}
+                          onContextMenu={(e) => openTaskMenu(e, task)}
                         />
                       ))
                     )}
@@ -1422,6 +1443,16 @@ export default function App() {
         projectId={settingsProjectId}
         onClose={() => setIsProjectSettingsOpen(false)}
         onDelete={(id, name) => { setIsProjectSettingsOpen(false); handleDeleteProject(id, name); }}
+      />
+
+      <TaskContextMenu
+        state={taskMenu}
+        onClose={() => setTaskMenu(null)}
+        onView={handleViewTask}
+        onEdit={handleEditTask}
+        onToggleComplete={handleToggleTask}
+        onToggleNotifications={handleToggleNotifications}
+        onDelete={moveTaskToTrash}
       />
 
       <ToastHost toasts={toasts} onDismiss={dismissToast} />

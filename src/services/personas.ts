@@ -13,6 +13,7 @@ export const personaService = {
       role: data.role,
       color: data.color,
       notes: data.notes,
+      status: 'active',
       createdAt: new Date().toISOString(),
     };
     await db.personas.add(persona);

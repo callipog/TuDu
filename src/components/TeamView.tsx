@@ -49,15 +49,21 @@ export function TeamView({ personas, tasks, onManagePersonas }: TeamViewProps) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {personas.map(p => {
+          {[...personas].sort((a, b) => Number(a.status === 'inactive') - Number(b.status === 'inactive')).map(p => {
             const mine = tasks.filter(t => t.assigneeId === p.id);
             const m = metricsFor(mine);
+            const inactive = p.status === 'inactive';
             return (
-              <div key={p.id} className="p-5 rounded-2xl bg-[#121214] border border-white/5">
+              <div key={p.id} className={`p-5 rounded-2xl bg-[#121214] border border-white/5 transition-opacity ${inactive ? 'opacity-60' : ''}`}>
                 <div className="flex items-center gap-3 mb-5">
                   <Avatar persona={p} size={44} />
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-semibold text-white truncate">{p.name}</h3>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-white truncate">{p.name}</h3>
+                      <span className={`shrink-0 text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full border ${inactive ? 'text-zinc-400 border-white/15 bg-white/5' : 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'}`}>
+                        {inactive ? 'Inativo' : 'Ativo'}
+                      </span>
+                    </div>
                     {p.role && <p className="text-xs text-zinc-500 truncate">{p.role}</p>}
                   </div>
                 </div>

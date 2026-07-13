@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Task } from '../types';
+import { StatusColor } from '../services/boards';
 import {
   parseISO, startOfDay, addDays, eachDayOfInterval, differenceInCalendarDays,
   format, isToday, getISOWeek
@@ -9,6 +10,7 @@ import { ptBR } from 'date-fns/locale';
 interface GanttViewProps {
   tasks: Task[];
   statusLabel: (task: Task) => string;
+  statusColor: (task: Task) => StatusColor;
   onSelect: (task: Task) => void;
 }
 
@@ -18,9 +20,6 @@ const HEADER_H = 88; // 4 linhas: mês / semana / dia / dia-da-semana
 const GRID = '44px 210px 92px 92px 116px 96px';
 const LEFT_W = 44 + 210 + 92 + 92 + 116 + 96;
 
-const urgencyBar: Record<Task['urgency'], string> = {
-  low: 'bg-emerald-500/80', medium: 'bg-amber-500/80', high: 'bg-orange-500/80', critical: 'bg-rose-500/80',
-};
 const urgencyDot: Record<Task['urgency'], string> = {
   low: 'bg-emerald-500', medium: 'bg-amber-500', high: 'bg-orange-500', critical: 'bg-rose-500',
 };
@@ -28,7 +27,7 @@ const urgencyLabel: Record<Task['urgency'], string> = {
   low: 'Baixa', medium: 'Média', high: 'Alta', critical: 'Crítica',
 };
 
-export function GanttView({ tasks, statusLabel, onSelect }: GanttViewProps) {
+export function GanttView({ tasks, statusLabel, statusColor, onSelect }: GanttViewProps) {
   const rows = useMemo(() => tasks.slice().sort((a, b) => {
     const as = a.startDate || a.dueDate || '';
     const bs = b.startDate || b.dueDate || '';
@@ -113,7 +112,10 @@ export function GanttView({ tasks, statusLabel, onSelect }: GanttViewProps) {
               <span className={`px-2 text-sm truncate ${t.completed ? 'line-through text-zinc-500' : 'text-white'}`}>{t.title}</span>
               <span className="px-2 text-xs text-zinc-400">{t.startDate ? format(parseISO(t.startDate), 'dd/MM/yy') : '—'}</span>
               <span className="px-2 text-xs text-zinc-400">{t.dueDate ? format(parseISO(t.dueDate), 'dd/MM/yy') : '—'}</span>
-              <span className="px-2 text-xs text-zinc-400 truncate">{statusLabel(t)}</span>
+              <span className="px-2 flex items-center gap-1.5 text-xs text-zinc-400 truncate">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor(t).dot}`}></span>
+                <span className="truncate">{statusLabel(t)}</span>
+              </span>
               <span className="px-2 flex items-center gap-1.5 text-xs text-zinc-400">
                 <span className={`w-2 h-2 rounded-full ${urgencyDot[t.urgency]}`}></span>{urgencyLabel[t.urgency]}
               </span>
@@ -174,8 +176,8 @@ export function GanttView({ tasks, statusLabel, onSelect }: GanttViewProps) {
               >
                 {bar && (
                   <div
-                    title={t.title}
-                    className={`absolute top-1/2 -translate-y-1/2 h-6 rounded-md flex items-center px-2 overflow-hidden shadow-sm ${urgencyBar[t.urgency]} ${t.completed ? 'opacity-50' : ''}`}
+                    title={`${t.title} · ${statusLabel(t)}`}
+                    className={`absolute top-1/2 -translate-y-1/2 h-6 rounded-md flex items-center px-2 overflow-hidden shadow-sm ${statusColor(t).bar} ${t.completed ? 'opacity-50' : ''}`}
                     style={{ left: bar.left + 2, width: bar.width - 4 }}
                   >
                     <span className="text-[10px] font-medium text-white truncate">{t.title}</span>

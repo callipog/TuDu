@@ -3,13 +3,13 @@ import { Archive } from 'lucide-react';
 import { Task, Persona, Epic } from '../types';
 import { TaskItem } from './TaskItem';
 import { BoardColumn, DEFAULT_COLUMNS, doneColumnId } from '../services/boards';
-import { motion, AnimatePresence } from 'motion/react';
 
 interface KanbanBoardProps {
   tasks: Task[];
   onToggleTask: (task: Task) => void;
   onClickTask?: (task: Task) => void;
   onToggleNotifications?: (task: Task) => void;
+  onContextTask?: (e: React.MouseEvent, task: Task) => void;
   onArchiveCompleted?: () => void;
   onDragStart: (e: React.DragEvent, taskId: string) => void;
   /** Move/reordena: coloca taskId na coluna `status`, antes de `targetTaskId` (ou no fim). markCompleted indica coluna final. */
@@ -24,7 +24,7 @@ const BORDER: Record<string, string> = {
   review: 'border-purple-500/20', done: 'border-emerald-500/20',
 };
 
-export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifications, onArchiveCompleted, onDragStart, onReorder, personaById, epicById, columns = DEFAULT_COLUMNS }: KanbanBoardProps) {
+export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifications, onContextTask, onArchiveCompleted, onDragStart, onReorder, personaById, epicById, columns = DEFAULT_COLUMNS }: KanbanBoardProps) {
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [dragOverTask, setDragOverTask] = useState<string | null>(null);
   const doneId = doneColumnId(columns);
@@ -58,7 +58,7 @@ export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifica
         return (
           <div
             key={col.id}
-            className={`flex-shrink-0 w-72 lg:flex-1 lg:min-w-[200px] flex flex-col bg-[#121214] border ${colColor} rounded-2xl overflow-hidden transition-colors ${dragOverCol === col.id ? 'bg-white/[0.05] border-white/40' : ''}`}
+            className={`flex-shrink-0 w-72 lg:flex-1 lg:min-w-[240px] flex flex-col bg-[#121214] border ${colColor} rounded-2xl overflow-hidden transition-colors ${dragOverCol === col.id ? 'bg-white/[0.05] border-white/40' : ''}`}
             onDrop={(e) => handleColumnDrop(e, col.id)}
             onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.id); }}
             onDragLeave={() => setDragOverCol(null)}
@@ -81,53 +81,43 @@ export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifica
               </div>
             </div>
             <div className="p-4 flex-1 overflow-y-auto custom-scrollbar space-y-3 min-h-[150px]">
-              <AnimatePresence mode="popLayout">
-                {colTasks.map(task => (
-                  <motion.div
-                    layout
-                    layoutId={`task-${task.id}`}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ type: "spring", stiffness: 600, damping: 35 }}
-                    key={task.id}
-                    draggable
-                    onDragStart={(e) => onDragStart(e as unknown as React.DragEvent, task.id)}
-                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverTask(task.id); setDragOverCol(col.id); }}
-                    onDrop={(e) => handleCardDrop(e, col.id, task.id)}
-                    className={`cursor-grab active:cursor-grabbing rounded-2xl ${dragOverTask === task.id ? 'ring-2 ring-indigo-500/60' : ''}`}
-                  >
-                    <TaskItem
-                      title={task.title}
-                      description={task.description}
-                      urgency={task.urgency}
-                      tags={task.tags}
-                      time={task.dueDate}
-                      completed={task.completed}
-                      notificationsEnabled={task.notificationsEnabled}
-                      recurrence={task.recurrence}
-                      subtasks={task.subtasks}
-                      assignee={personaById?.(task.assigneeId)}
-                      epic={epicById?.(task.epicId)}
-                      onToggle={() => onToggleTask(task)}
-                      onToggleNotifications={() => onToggleNotifications?.(task)}
-                      onClick={() => onClickTask?.(task)}
-                    />
-                  </motion.div>
-                ))}
-                {colTasks.length === 0 && (
-                  <motion.div
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ type: "spring", stiffness: 600, damping: 35 }}
-                    className="h-20 border-2 border-dashed border-white/10 rounded-xl flex items-center justify-center text-xs text-zinc-500 pointer-events-none"
-                  >
-                    Arraste tarefas para cá
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {/* Cards com div + animação CSS de entrada (em vez de framer-motion):
+                  o ciclo de vida do motion/AnimatePresence não desmontava o card ao
+                  excluir (ficava invisível ocupando espaço) e travava a entrada sob
+                  StrictMode. Div puro garante montar/desmontar confiável. */}
+              {colTasks.map(task => (
+                <div
+                  key={task.id}
+                  draggable
+                  onDragStart={(e) => onDragStart(e, task.id)}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverTask(task.id); setDragOverCol(col.id); }}
+                  onDrop={(e) => handleCardDrop(e, col.id, task.id)}
+                  className={`kanban-card-enter cursor-grab active:cursor-grabbing rounded-2xl ${dragOverTask === task.id ? 'ring-2 ring-indigo-500/60' : ''}`}
+                >
+                  <TaskItem
+                    title={task.title}
+                    description={task.description}
+                    urgency={task.urgency}
+                    tags={task.tags}
+                    time={task.dueDate}
+                    completed={task.completed}
+                    notificationsEnabled={task.notificationsEnabled}
+                    recurrence={task.recurrence}
+                    subtasks={task.subtasks}
+                    assignee={personaById?.(task.assigneeId)}
+                    epic={epicById?.(task.epicId)}
+                    onToggle={() => onToggleTask(task)}
+                    onToggleNotifications={() => onToggleNotifications?.(task)}
+                    onClick={() => onClickTask?.(task)}
+                    onContextMenu={onContextTask ? (e) => onContextTask(e, task) : undefined}
+                  />
+                </div>
+              ))}
+              {colTasks.length === 0 && (
+                <div className="h-20 border-2 border-dashed border-white/10 rounded-xl flex items-center justify-center text-xs text-zinc-500 pointer-events-none">
+                  Arraste tarefas para cá
+                </div>
+              )}
             </div>
           </div>
         );

@@ -6,7 +6,7 @@ import { backupService } from '../services/backup';
 import { taskService } from '../services/tasks';
 import { tagService } from '../services/tags';
 import { themeService, Theme } from '../services/theme';
-import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor } from 'lucide-react';
+import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -134,10 +134,11 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
         {/* Aparência */}
         <div>
           <p className={sectionTitle}>Aparência</p>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             {([
               { id: 'dark' as Theme, label: 'Escuro', icon: <Moon size={15} /> },
               { id: 'light' as Theme, label: 'Claro', icon: <Sun size={15} /> },
+              { id: 'sepia' as Theme, label: 'Sépia', icon: <Coffee size={15} /> },
               { id: 'system' as Theme, label: 'Sistema', icon: <Monitor size={15} /> },
             ]).map(opt => (
               <button

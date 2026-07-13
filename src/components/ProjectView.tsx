@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Project, Epic, Task, Persona } from '../types';
 import { KanbanBoard } from './KanbanBoard';
 import { GanttView } from './GanttView';
-import { columnsFor, PROJECT_STATUS_BADGE } from '../services/boards';
+import { columnsFor, PROJECT_STATUS_BADGE, StatusColor } from '../services/boards';
 import { Avatar } from './Avatar';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -16,15 +16,17 @@ interface ProjectViewProps {
   onToggleTask: (task: Task) => void;
   onClickTask: (task: Task) => void;
   onToggleNotifications: (task: Task) => void;
+  onContextTask?: (e: React.MouseEvent, task: Task) => void;
   onArchiveCompleted: () => void;
   onDragStart: (e: React.DragEvent, taskId: string) => void;
   onReorder: (taskId: string, status: string, targetTaskId: string | null, markCompleted: boolean) => void;
   personaById: (id?: string) => Persona | undefined;
   epicById: (id?: string) => Epic | undefined;
   statusLabel: (task: Task) => string;
+  statusColor: (task: Task) => StatusColor;
 }
 
-export function ProjectView({ project, epics, tasks, onEditProject, statusLabel, ...board }: ProjectViewProps) {
+export function ProjectView({ project, epics, tasks, onEditProject, statusLabel, statusColor, ...board }: ProjectViewProps) {
   const [epicFilter, setEpicFilter] = useState<string>('all'); // 'all' | epicId | 'none'
   const [mode, setMode] = useState<'kanban' | 'gantt'>('kanban');
 
@@ -124,6 +126,7 @@ export function ProjectView({ project, epics, tasks, onEditProject, statusLabel,
             onToggleTask={board.onToggleTask}
             onClickTask={board.onClickTask}
             onToggleNotifications={board.onToggleNotifications}
+            onContextTask={board.onContextTask}
             onArchiveCompleted={board.onArchiveCompleted}
             onDragStart={board.onDragStart}
             onReorder={board.onReorder}
@@ -132,7 +135,7 @@ export function ProjectView({ project, epics, tasks, onEditProject, statusLabel,
             columns={columnsFor(project)}
           />
         ) : (
-          <GanttView tasks={boardTasks} statusLabel={statusLabel} onSelect={board.onClickTask} />
+          <GanttView tasks={boardTasks} statusLabel={statusLabel} statusColor={statusColor} onSelect={board.onClickTask} />
         )}
       </div>
     </div>

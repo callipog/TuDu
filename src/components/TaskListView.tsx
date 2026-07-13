@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Task, Urgency, TaskStatus } from '../types';
+import { StatusColor } from '../services/boards';
 import { tagService } from '../services/tags';
 import { format, parseISO, isPast } from 'date-fns';
 import { Search, Pencil, Eye, Check, Bell, Repeat, ListChecks, ChevronUp, ChevronDown, Save, Trash2, Star } from 'lucide-react';
@@ -9,7 +10,9 @@ interface TaskListViewProps {
   onView: (task: Task) => void;
   onEdit: (task: Task) => void;
   onToggle: (task: Task) => void;
+  onContext?: (e: React.MouseEvent, task: Task) => void;
   statusLabel?: (task: Task) => string;
+  statusColor?: (task: Task) => StatusColor;
 }
 
 type SortKey = 'title' | 'status' | 'urgency' | 'due';
@@ -50,7 +53,7 @@ function loadSaved(): SavedFilter[] {
   return [];
 }
 
-export function TaskListView({ tasks, onView, onEdit, onToggle, statusLabel }: TaskListViewProps) {
+export function TaskListView({ tasks, onView, onEdit, onToggle, onContext, statusLabel, statusColor }: TaskListViewProps) {
   const [search, setSearch] = useState('');
   const [urgencyFilter, setUrgencyFilter] = useState<Urgency | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
@@ -215,6 +218,7 @@ export function TaskListView({ tasks, onView, onEdit, onToggle, statusLabel }: T
                 <div
                   key={task.id}
                   onClick={() => onView(task)}
+                  onContextMenu={onContext ? (e) => onContext(e, task) : undefined}
                   className="grid grid-cols-1 md:grid-cols-[1fr_130px_110px_130px_100px] gap-2 md:gap-4 px-5 py-4 items-center hover:bg-white/[0.03] transition-colors cursor-pointer"
                 >
                   <div className="min-w-0 flex items-start gap-3">
@@ -240,7 +244,10 @@ export function TaskListView({ tasks, onView, onEdit, onToggle, statusLabel }: T
                       </div>
                     </div>
                   </div>
-                  <div className="text-xs text-zinc-400">{status}</div>
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-400 min-w-0">
+                    {statusColor && <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor(task).dot}`}></span>}
+                    <span className="truncate">{status}</span>
+                  </div>
                   <div className="flex items-center gap-2 text-xs">
                     <span className={`w-2 h-2 rounded-full ${meta.dot}`}></span>
                     <span className={meta.text}>{meta.label}</span>

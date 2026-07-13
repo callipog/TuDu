@@ -62,12 +62,16 @@ export interface Epic {
 }
 
 /** "Persona" gerencial — não é um usuário logado, é uma etiqueta rica (offline). */
+export type PersonaStatus = 'active' | 'inactive';
+
 export interface Persona {
   id: string;
   name: string;
   role?: string;
   color: string;
   notes?: string;
+  /** Situação da pessoa na equipe. Ausente = ativo (compatibilidade). */
+  status?: PersonaStatus;
   createdAt: string;
 }
 

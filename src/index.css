@@ -34,6 +34,21 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* Animação de entrada dos cards do Kanban (CSS puro: confiável e imune ao
+     ciclo de vida do StrictMode, diferente do framer-motion). Usa fill-mode
+     `backwards` para que, se a animação não rodar, o card fique visível
+     (estado natural = opacity 1) em vez de preso invisível. */
+  @keyframes kanbanCardEnter {
+    from { opacity: 0; transform: scale(0.96) translateY(4px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .kanban-card-enter {
+    animation: kanbanCardEnter 0.18s ease-out backwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .kanban-card-enter { animation: none; }
+  }
 }
 
 /* ==========================================================================
@@ -120,3 +135,61 @@
 .light .\[color-scheme\:dark\] { color-scheme: light; }
 .light .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); }
 .light .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.25); }
+
+/* ==========================================================================
+   MODO SÉPIA (leitura confortável)
+   Herda o modo claro (.light) e apenas aquece as superfícies e o texto.
+   Paleta inspirada em temas consagrados de leitura (Kindle Sépia, Solarized
+   Light, iA Writer): papel quente porém CLARO e pouco saturado, texto em
+   cinza-quente (não marrom forte) — descansa a vista sem parecer "envelhecido".
+   As regras vêm depois das de `.light` e têm a mesma especificidade, vencendo.
+   ========================================================================== */
+
+.theme-sepia {
+  color-scheme: light;
+  /* Calor global sutil para elementos sem classe utilitária. */
+  background-color: #f2ece1;
+}
+
+/* --- Superfícies (papel quente e claro) --------------------------------- */
+.theme-sepia .bg-\[\#09090b\] { background-color: #f2ece1; } /* canvas */
+.theme-sepia .bg-\[\#121214\] { background-color: #faf6ee; } /* cards (elevados) */
+.theme-sepia .bg-\[\#18181b\] { background-color: #fdfaf3; } /* modais/inputs */
+.theme-sepia .bg-zinc-950\/50 { background-color: rgba(250, 246, 238, 0.82); }
+.theme-sepia .bg-black\/40 { background-color: rgba(92, 76, 50, 0.05); }
+
+.theme-sepia .bg-white\/\[0\.02\] { background-color: rgba(92, 76, 50, 0.03); }
+.theme-sepia .bg-white\/\[0\.03\] { background-color: rgba(92, 76, 50, 0.04); }
+.theme-sepia .bg-white\/\[0\.04\] { background-color: rgba(92, 76, 50, 0.05); }
+.theme-sepia .bg-white\/\[0\.05\] { background-color: rgba(92, 76, 50, 0.06); }
+.theme-sepia .bg-white\/\[0\.06\] { background-color: rgba(92, 76, 50, 0.075); }
+.theme-sepia .bg-white\/5 { background-color: rgba(92, 76, 50, 0.06); }
+.theme-sepia .bg-white\/10 { background-color: rgba(92, 76, 50, 0.09); }
+.theme-sepia .hover\:bg-white\/5:hover { background-color: rgba(92, 76, 50, 0.06); }
+.theme-sepia .hover\:bg-white\/10:hover { background-color: rgba(92, 76, 50, 0.09); }
+.theme-sepia .hover\:bg-white\/\[0\.02\]:hover { background-color: rgba(92, 76, 50, 0.03); }
+.theme-sepia .hover\:bg-white\/\[0\.03\]:hover { background-color: rgba(92, 76, 50, 0.04); }
+.theme-sepia .hover\:bg-white\/\[0\.06\]:hover { background-color: rgba(92, 76, 50, 0.075); }
+
+/* --- Bordas e divisores (marrom translúcido bem discreto) --------------- */
+.theme-sepia .border-white\/5 { border-color: rgba(92, 76, 50, 0.1); }
+.theme-sepia .border-white\/10 { border-color: rgba(92, 76, 50, 0.14); }
+.theme-sepia .border-white\/15 { border-color: rgba(92, 76, 50, 0.18); }
+.theme-sepia .border-white\/20 { border-color: rgba(92, 76, 50, 0.24); }
+.theme-sepia .border-white\/40 { border-color: rgba(92, 76, 50, 0.38); }
+.theme-sepia .divide-white\/5 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(92, 76, 50, 0.09); }
+.theme-sepia .divide-white\/10 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(92, 76, 50, 0.12); }
+
+/* --- Texto (cinza-quente, não marrom saturado) -------------------------- */
+.theme-sepia .text-\[\#e4e4e7\] { color: #45403a; }
+.theme-sepia .text-white { color: #3a3630; }
+.theme-sepia .text-zinc-200 { color: #45403a; }
+.theme-sepia .text-zinc-300 { color: #565049; }
+.theme-sepia .text-zinc-400 { color: #7c766b; }
+.theme-sepia .hover\:text-white:hover { color: #2b2822; }
+.theme-sepia .hover\:text-zinc-300:hover { color: #565049; }
+.theme-sepia .hover\:text-zinc-400:hover { color: #7c766b; }
+
+/* --- Scrollbar ---------------------------------------------------------- */
+.theme-sepia .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(92, 76, 50, 0.18); }
+.theme-sepia .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(92, 76, 50, 0.3); }

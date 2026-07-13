@@ -5,7 +5,7 @@ import { format, parseISO, isPast } from 'date-fns';
 import { tagService } from '../services/tags';
 import { Avatar } from './Avatar';
 
-export function TaskItem({ title, description, urgency, tags, completed, time, notificationsEnabled, recurrence, subtasks, assignee, epic, onToggle, onToggleNotifications, onEdit, onClick }: { key?: React.Key; title: string; description?: string; urgency: Task['urgency']; tags: string[]; completed?: boolean; time?: string; notificationsEnabled?: boolean; recurrence?: Task['recurrence']; subtasks?: SubTask[]; assignee?: Persona; epic?: Epic; onToggle?: () => void; onToggleNotifications?: () => void; onEdit?: () => void; onClick?: () => void }) {
+export function TaskItem({ title, description, urgency, tags, completed, time, notificationsEnabled, recurrence, subtasks, assignee, epic, onToggle, onToggleNotifications, onEdit, onClick, onContextMenu }: { key?: React.Key; title: string; description?: string; urgency: Task['urgency']; tags: string[]; completed?: boolean; time?: string; notificationsEnabled?: boolean; recurrence?: Task['recurrence']; subtasks?: SubTask[]; assignee?: Persona; epic?: Epic; onToggle?: () => void; onToggleNotifications?: () => void; onEdit?: () => void; onClick?: () => void; onContextMenu?: (e: React.MouseEvent) => void }) {
   const urgencyStyles = {
     low: 'hover:border-emerald-500/50',
     medium: 'hover:border-amber-500/50',
@@ -28,7 +28,7 @@ export function TaskItem({ title, description, urgency, tags, completed, time, n
   const subtaskDone = subtasks?.filter(s => s.done).length ?? 0;
 
   return (
-    <div onClick={onClick} className={`relative group p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.06] transition-all cursor-pointer ${urgencyStyles[urgency]} ${completed ? 'opacity-50' : ''}`}>
+    <div onClick={onClick} onContextMenu={onContextMenu} className={`relative group p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.06] transition-all cursor-pointer ${urgencyStyles[urgency]} ${completed ? 'opacity-50' : ''}`}>
       <div className={`absolute left-2.5 top-3 bottom-3 w-1 rounded-full ${urgencyColors[urgency]} opacity-60`} />
       <div className="flex justify-between items-start mb-2 pl-3">
         <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -83,12 +83,17 @@ export function TaskItem({ title, description, urgency, tags, completed, time, n
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 flex-wrap justify-end min-w-0 ml-auto">
           {assignee && <Avatar persona={assignee} size={22} />}
-          {isRecurring && <Repeat size={12} className="text-zinc-500" aria-label="Tarefa recorrente" />}
+          {isRecurring && <Repeat size={12} className="text-zinc-500 shrink-0" aria-label="Tarefa recorrente" />}
           {formattedDue && (
-            <span className={`text-xs font-mono ${isOverdue ? 'text-rose-500 font-bold' : 'text-zinc-400'}`}>
-              {isOverdue ? `${formattedDue} · Atrasado` : formattedDue}
+            <span className={`text-xs font-mono whitespace-nowrap ${isOverdue ? 'text-rose-500 font-bold' : 'text-zinc-400'}`}>
+              {formattedDue}
+            </span>
+          )}
+          {isOverdue && (
+            <span className="text-[9px] uppercase font-bold tracking-wider text-rose-500 bg-rose-500/10 border border-rose-500/30 rounded px-1.5 py-0.5 whitespace-nowrap">
+              Atrasado
             </span>
           )}
         </div>

@@ -65,7 +65,7 @@ export function ManagePersonasModal({ isOpen, onClose, onDeletePersona }: Manage
         {personas.length === 0 ? (
           <p className="text-sm text-zinc-400 text-center py-4">Nenhuma persona ainda.</p>
         ) : personas.map(p => (
-          <div key={p.id} className="flex items-center gap-3 bg-white/5 border border-white/10 p-3 rounded-lg">
+          <div key={p.id} className={`flex items-center gap-3 bg-white/5 border border-white/10 p-3 rounded-lg transition-opacity ${p.status === 'inactive' ? 'opacity-60' : ''}`}>
             <Avatar persona={p} size={36} />
             <div className="flex-1 min-w-0">
               <input
@@ -80,6 +80,10 @@ export function ManagePersonasModal({ isOpen, onClose, onDeletePersona }: Manage
                 className="w-full bg-transparent text-xs text-zinc-400 focus:outline-none"
               />
             </div>
+            <StatusToggle
+              active={p.status !== 'inactive'}
+              onChange={(active) => personaService.update(p.id, { status: active ? 'active' : 'inactive' })}
+            />
             <div className="flex flex-wrap gap-1 max-w-[120px] justify-end">
               {PREDEFINED_COLORS.map(c => (
                 <button key={c} type="button" onClick={() => personaService.update(p.id, { color: c })}
@@ -98,5 +102,26 @@ export function ManagePersonasModal({ isOpen, onClose, onDeletePersona }: Manage
         <button onClick={onClose} className="bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">Fechar</button>
       </div>
     </Modal>
+  );
+}
+
+/** Toggle Ativo/Inativo para a persona. */
+function StatusToggle({ active, onChange }: { active: boolean; onChange: (active: boolean) => void }) {
+  return (
+    <div className="flex flex-col items-center gap-1 shrink-0">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={active}
+        onClick={() => onChange(!active)}
+        title={active ? 'Ativo — clique para inativar' : 'Inativo — clique para ativar'}
+        className={`relative w-9 h-5 rounded-full transition-colors ${active ? 'bg-emerald-500' : 'bg-zinc-600'}`}
+      >
+        <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${active ? 'translate-x-4' : ''}`} />
+      </button>
+      <span className={`text-[9px] uppercase font-bold tracking-wider ${active ? 'text-emerald-400' : 'text-zinc-500'}`}>
+        {active ? 'Ativo' : 'Inativo'}
+      </span>
+    </div>
   );
 }

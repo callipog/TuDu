@@ -31,6 +31,39 @@ export function doneColumnId(columns: BoardColumn[]): string {
   return columns.length > 0 ? columns[columns.length - 1].id : 'done';
 }
 
+/** Cores de um status (ponto/dot, barra do Gantt e texto). */
+export interface StatusColor { dot: string; bar: string; text: string; }
+
+/* Classes LITERAIS (o scanner do Tailwind não detecta strings montadas em runtime). */
+const STATUS_COLOR: Record<string, StatusColor> = {
+  backlog:     { dot: 'bg-zinc-400',    bar: 'bg-zinc-400/80',    text: 'text-zinc-400' },
+  todo:        { dot: 'bg-blue-500',    bar: 'bg-blue-500/80',    text: 'text-blue-400' },
+  in_progress: { dot: 'bg-amber-500',   bar: 'bg-amber-500/80',   text: 'text-amber-400' },
+  review:      { dot: 'bg-purple-500',  bar: 'bg-purple-500/80',  text: 'text-purple-400' },
+  done:        { dot: 'bg-emerald-500', bar: 'bg-emerald-500/80', text: 'text-emerald-400' },
+};
+
+const DONE_COLOR: StatusColor = { dot: 'bg-emerald-500', bar: 'bg-emerald-500/80', text: 'text-emerald-400' };
+
+/* Paleta para colunas customizadas sem id conhecido (por posição). */
+const FALLBACK_COLORS: StatusColor[] = [
+  { dot: 'bg-sky-500',    bar: 'bg-sky-500/80',    text: 'text-sky-400' },
+  { dot: 'bg-violet-500', bar: 'bg-violet-500/80', text: 'text-violet-400' },
+  { dot: 'bg-pink-500',   bar: 'bg-pink-500/80',   text: 'text-pink-400' },
+  { dot: 'bg-teal-500',   bar: 'bg-teal-500/80',   text: 'text-teal-400' },
+  { dot: 'bg-orange-500', bar: 'bg-orange-500/80', text: 'text-orange-400' },
+  { dot: 'bg-cyan-500',   bar: 'bg-cyan-500/80',   text: 'text-cyan-400' },
+];
+
+/** Cor de um status, resolvendo pelas colunas do projeto (a última coluna = concluído). */
+export function statusColor(status: string | undefined, completed: boolean, columns: BoardColumn[]): StatusColor {
+  const id = status || (completed ? doneColumnId(columns) : columns[0]?.id) || 'todo';
+  if (STATUS_COLOR[id]) return STATUS_COLOR[id];
+  if (id === doneColumnId(columns)) return DONE_COLOR;
+  const idx = columns.findIndex(c => c.id === id);
+  return FALLBACK_COLORS[(idx >= 0 ? idx : 0) % FALLBACK_COLORS.length];
+}
+
 /** Rótulo legível de um status, resolvendo pelas colunas do projeto. */
 export function statusLabel(status: string | undefined, completed: boolean, columns: BoardColumn[]): string {
   const id = status || (completed ? doneColumnId(columns) : columns[0]?.id);

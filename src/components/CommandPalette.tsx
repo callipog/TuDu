@@ -7,7 +7,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   Search, Inbox, Clock, Calendar, CalendarClock, List, BarChart3, Archive, Trash2,
-  Plus, Timer, Settings, Moon, Sun, Monitor, CornerDownLeft, FileText, Sparkles, Users
+  Plus, Timer, Settings, Moon, Sun, Monitor, Coffee, CornerDownLeft, FileText, Sparkles, Users
 } from 'lucide-react';
 
 interface CommandPaletteProps {
@@ -63,6 +63,7 @@ export function CommandPalette({ isOpen, onClose, tasks, onNavigate, onNewTask, 
       { id: 'settings', label: 'Abrir Configurações', hint: 'Ação', icon: <Settings size={16} />, run: () => { onOpenSettings(); onClose(); } },
       { id: 'theme-dark', label: 'Tema: Escuro', hint: 'Aparência', icon: <Moon size={16} />, run: () => { onSetTheme('dark'); onClose(); } },
       { id: 'theme-light', label: 'Tema: Claro', hint: 'Aparência', icon: <Sun size={16} />, run: () => { onSetTheme('light'); onClose(); } },
+      { id: 'theme-sepia', label: 'Tema: Sépia', hint: 'Aparência', icon: <Coffee size={16} />, run: () => { onSetTheme('sepia'); onClose(); } },
       { id: 'theme-system', label: 'Tema: Sistema', hint: 'Aparência', icon: <Monitor size={16} />, run: () => { onSetTheme('system'); onClose(); } },
     ];
   }, [onNavigate, onNewTask, onOpenPomodoro, onOpenSettings, onSetTheme, onClose]);
