@@ -36,6 +36,9 @@
       "dist/**/*",
       "electron/**/*"
     ],
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
     "mac": {
       "icon": "public/icon.png"
     },
