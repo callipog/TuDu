@@ -58,6 +58,8 @@ export interface Epic {
   name: string;
   color?: string;
   description?: string;
+  /** Ordem manual dentro do projeto (arrastar para reordenar). */
+  order?: number;
   createdAt: string;
 }
 

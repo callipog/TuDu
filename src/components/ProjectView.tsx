@@ -3,6 +3,7 @@ import { Project, Epic, Task, Persona } from '../types';
 import { KanbanBoard } from './KanbanBoard';
 import { GanttView } from './GanttView';
 import { columnsFor, PROJECT_STATUS_BADGE, StatusColor } from '../services/boards';
+import { projectService } from '../services/projects';
 import { Avatar } from './Avatar';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -133,6 +134,7 @@ export function ProjectView({ project, epics, tasks, onEditProject, statusLabel,
             personaById={board.personaById}
             epicById={board.epicById}
             columns={columnsFor(project)}
+            onReorderColumns={(cols) => projectService.update(project.id, { columns: cols })}
           />
         ) : (
           <GanttView tasks={boardTasks} statusLabel={statusLabel} statusColor={statusColor} onSelect={board.onClickTask} />

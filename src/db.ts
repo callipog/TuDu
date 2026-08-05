@@ -49,4 +49,27 @@ db.version(4).stores({
   personas: 'id, name, createdAt'
 });
 
+// v5: ordem manual dos épicos dentro do projeto (drag para reordenar).
+db.version(5).stores({
+  tasks: 'id, title, urgency, completed, createdAt, status, archived, deleted, order, projectId, epicId, assigneeId',
+  tags: 'id, name',
+  projects: 'id, name, status, archived, createdAt',
+  epics: 'id, projectId, order, createdAt',
+  personas: 'id, name, createdAt'
+}).upgrade(async (tx) => {
+  const epics = await tx.table('epics').toArray() as Epic[];
+  const byProject = new Map<string, Epic[]>();
+  for (const e of epics) {
+    const list = byProject.get(e.projectId) ?? [];
+    list.push(e);
+    byProject.set(e.projectId, list);
+  }
+  for (const list of byProject.values()) {
+    list.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+    for (let i = 0; i < list.length; i++) {
+      await tx.table('epics').update(list[i].id, { order: i });
+    }
+  }
+});
+
 export { db };

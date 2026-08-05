@@ -49,6 +49,80 @@
   @media (prefers-reduced-motion: reduce) {
     .kanban-card-enter { animation: none; }
   }
+
+  /* ---- Reordenação por arrasto (épicos, etapas do board) ------------------
+     O deslize dos itens para a nova posição é feito em JS (FLIP, veja
+     `useSortableList`); aqui ficam só os estados visuais. */
+
+  /* Item "fantasma" enquanto está sendo arrastado. */
+  .sortable-dragging {
+    opacity: 0.35;
+    filter: saturate(0.6);
+  }
+
+  /* Linha indicando onde o item vai cair (com um brilho suave). */
+  .drop-line-top,
+  .drop-line-bottom,
+  .drop-line-left,
+  .drop-line-right {
+    animation: dropLineIn 0.15s ease-out;
+  }
+  .drop-line-top    { box-shadow: 0 -3px 0 0 #6366f1, 0 -6px 14px -4px rgba(99, 102, 241, 0.7); }
+  .drop-line-bottom { box-shadow: 0 3px 0 0 #6366f1, 0 6px 14px -4px rgba(99, 102, 241, 0.7); }
+  .drop-line-left   { box-shadow: -3px 0 0 0 #6366f1, -6px 0 14px -4px rgba(99, 102, 241, 0.7); }
+  .drop-line-right  { box-shadow: 3px 0 0 0 #6366f1, 6px 0 14px -4px rgba(99, 102, 241, 0.7); }
+  @keyframes dropLineIn {
+    from { opacity: 0.3; }
+    to   { opacity: 1; }
+  }
+
+  /* Pulso de confirmação no item recém-movido: "gravou". */
+  @keyframes sortableSettle {
+    0%   { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.65); }
+    60%  { box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.18); }
+    100% { box-shadow: 0 0 0 9px rgba(99, 102, 241, 0); }
+  }
+  .sortable-settle {
+    animation: sortableSettle 0.6s cubic-bezier(0.2, 0.9, 0.25, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .drop-line-top, .drop-line-bottom, .drop-line-left, .drop-line-right,
+    .sortable-settle { animation: none; }
+  }
+
+  /* Punho de arrasto: cresce um tico ao passar o mouse. */
+  .drag-handle {
+    transition: color 0.15s ease, transform 0.15s ease;
+  }
+  .drag-handle:hover { transform: scale(1.18); }
+  .drag-handle:active { transform: scale(0.94); }
+
+  /* ---- Scrollbar horizontal do board -------------------------------------
+     Visível de propósito: é a pista de que dá para rolar lateralmente. */
+  .board-scrollbar::-webkit-scrollbar {
+    height: 10px;
+  }
+  .board-scrollbar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
+  }
+  .board-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .board-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.32);
+    background-clip: content-box;
+  }
+
+  /* Esmaecimento nas laterais do board: sinaliza "tem mais coisa aí".
+     A cor acompanha o tema via --board-fade (definida em .light/.theme-sepia). */
+  .board-fade { --board-fade: #09090b; }
+  .board-fade-left  { background: linear-gradient(to right, var(--board-fade) 20%, transparent); }
+  .board-fade-right { background: linear-gradient(to left,  var(--board-fade) 20%, transparent); }
 }
 
 /* ==========================================================================
@@ -135,6 +209,10 @@
 .light .\[color-scheme\:dark\] { color-scheme: light; }
 .light .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); }
 .light .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.25); }
+.light .board-fade { --board-fade: #f4f4f5; }
+.light .board-scrollbar::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.04); }
+.light .board-scrollbar::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); background-clip: content-box; }
+.light .board-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.34); background-clip: content-box; }
 
 /* ==========================================================================
    MODO SÉPIA (leitura confortável)
@@ -193,3 +271,7 @@
 /* --- Scrollbar ---------------------------------------------------------- */
 .theme-sepia .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(92, 76, 50, 0.18); }
 .theme-sepia .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(92, 76, 50, 0.3); }
+.theme-sepia .board-fade { --board-fade: #f2ece1; }
+.theme-sepia .board-scrollbar::-webkit-scrollbar-track { background: rgba(92, 76, 50, 0.05); }
+.theme-sepia .board-scrollbar::-webkit-scrollbar-thumb { background: rgba(92, 76, 50, 0.24); background-clip: content-box; }
+.theme-sepia .board-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(92, 76, 50, 0.38); background-clip: content-box; }

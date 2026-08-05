@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Modal } from './Modal';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { projectService } from '../services/projects';
+import { projectService, sortEpics } from '../services/projects';
 import { PREDEFINED_COLORS } from '../services/tags';
 import { ProjectStatus } from '../types';
 import { Plus, Trash2, ChevronRight, ChevronDown, FolderKanban, X } from 'lucide-react';
@@ -73,7 +73,7 @@ export function ManageProjectsModal({ isOpen, onClose, onDeleteProject }: Manage
         {projects.length === 0 ? (
           <p className="text-sm text-zinc-400 text-center py-4">Nenhum projeto ainda.</p>
         ) : projects.map(p => {
-          const projEpics = epics.filter(e => e.projectId === p.id);
+          const projEpics = sortEpics(epics.filter(e => e.projectId === p.id));
           const isOpen = expanded === p.id;
           return (
             <div key={p.id} className="rounded-lg border border-white/10 bg-white/5">

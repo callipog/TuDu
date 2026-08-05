@@ -33,7 +33,7 @@ import { ProjectSettingsModal } from './components/ProjectSettingsModal';
 import { ProjectsManagerView } from './components/ProjectsManagerView';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
-import { projectService } from './services/projects';
+import { projectService, sortEpics } from './services/projects';
 import { personaService } from './services/personas';
 import { columnsFor, statusLabel as resolveStatusLabel, statusColor as resolveStatusColor } from './services/boards';
 import { format, isToday, isSameDay, isPast, parseISO } from 'date-fns';
@@ -97,7 +97,7 @@ export default function App() {
 
   // Camada gerencial (reativa via Dexie).
   const projects = useLiveQuery(() => db.projects.orderBy('createdAt').toArray(), []) ?? [];
-  const epics = useLiveQuery(() => db.epics.toArray(), []) ?? [];
+  const epics = sortEpics(useLiveQuery(() => db.epics.toArray(), []) ?? []);
   const personas = useLiveQuery(() => db.personas.orderBy('name').toArray(), []) ?? [];
   const personaById = (id?: string) => id ? personas.find(p => p.id === id) : undefined;
   const epicById = (id?: string) => id ? epics.find(e => e.id === id) : undefined;

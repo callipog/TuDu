@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Task, Attachment } from '../types';
-import { projectService } from '../services/projects';
+import { projectService, sortEpics } from '../services/projects';
 import { PREDEFINED_COLORS } from '../services/tags';
 import { PROJECT_STATUS_BADGE } from '../services/boards';
 import { Avatar } from './Avatar';
@@ -31,7 +31,7 @@ export function ProjectsManagerView({ tasks, onOpenProject, onEditProject, onDel
 
   const filtered = projects.filter(p => !search.trim() || p.name.toLowerCase().includes(search.toLowerCase()));
   const sel = projects.find(p => p.id === selectedId) || null;
-  const selEpics = sel ? epics.filter(e => e.projectId === sel.id) : [];
+  const selEpics = sel ? sortEpics(epics.filter(e => e.projectId === sel.id)) : [];
   const selTasks = sel ? tasks.filter(t => t.projectId === sel.id) : [];
   const done = selTasks.filter(t => t.completed).length;
   const pct = selTasks.length > 0 ? Math.round((done / selTasks.length) * 100) : 0;

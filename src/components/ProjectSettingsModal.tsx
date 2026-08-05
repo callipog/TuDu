@@ -2,12 +2,13 @@ import React from 'react';
 import { Modal } from './Modal';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { projectService } from '../services/projects';
+import { projectService, sortEpics } from '../services/projects';
 import { PREDEFINED_COLORS } from '../services/tags';
 import { columnsFor } from '../services/boards';
+import { useSortableList } from '../hooks/useSortableList';
 import { Avatar } from './Avatar';
 import { ProjectStatus } from '../types';
-import { Plus, Trash2, FolderKanban, ChevronUp, ChevronDown, Columns3 } from 'lucide-react';
+import { Plus, Trash2, FolderKanban, GripVertical, Columns3 } from 'lucide-react';
 
 interface ProjectSettingsModalProps {
   isOpen: boolean;
@@ -20,9 +21,19 @@ const statusLabels: Record<ProjectStatus, string> = { active: 'Ativo', paused: '
 
 export function ProjectSettingsModal({ isOpen, projectId, onClose, onDelete }: ProjectSettingsModalProps) {
   const project = useLiveQuery(() => projectId ? db.projects.get(projectId) : undefined, [projectId]);
-  const epics = useLiveQuery(() => projectId ? db.epics.where('projectId').equals(projectId).toArray() : [], [projectId]) ?? [];
+  const rawEpics = useLiveQuery(() => projectId ? db.epics.where('projectId').equals(projectId).toArray() : [], [projectId]) ?? [];
   const personas = useLiveQuery(() => db.personas.orderBy('name').toArray(), []) ?? [];
   const [newEpic, setNewEpic] = React.useState('');
+
+  const epics = sortEpics(rawEpics);
+
+  // Colunas do board (etapas). Inicializa com o padrão ao editar pela 1ª vez.
+  const cols = columnsFor(project);
+  const setCols = (next: { id: string; label: string }[]) => { if (project) projectService.update(project.id, { columns: next }); };
+
+  // Arrastar para reordenar (hooks antes de qualquer return condicional).
+  const epicSort = useSortableList(epics.map(e => e.id), (ids) => projectService.reorderEpics(ids));
+  const colSort = useSortableList(cols.map(c => c.id), (ids) => setCols(ids.map(id => cols.find(c => c.id === id)!)));
 
   if (!project) return null;
 
@@ -34,20 +45,9 @@ export function ProjectSettingsModal({ isOpen, projectId, onClose, onDelete }: P
   };
   const toDateInput = (iso?: string) => iso ? iso.slice(0, 10) : '';
 
-  // Colunas do board (etapas). Inicializa com o padrão ao editar pela 1ª vez.
-  const cols = columnsFor(project);
-  const setCols = (next: { id: string; label: string }[]) => up({ columns: next });
   const addColumn = () => setCols([...cols, { id: crypto.randomUUID(), label: 'Nova etapa' }]);
   const renameColumn = (id: string, label: string) => setCols(cols.map(c => c.id === id ? { ...c, label } : c));
   const removeColumn = (id: string) => { if (cols.length > 1) setCols(cols.filter(c => c.id !== id)); };
-  const moveColumn = (id: string, dir: -1 | 1) => {
-    const i = cols.findIndex(c => c.id === id);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= cols.length) return;
-    const next = [...cols];
-    [next[i], next[j]] = [next[j], next[i]];
-    setCols(next);
-  };
 
   const field = 'w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors';
 
@@ -116,28 +116,42 @@ export function ProjectSettingsModal({ isOpen, projectId, onClose, onDelete }: P
         {/* Colunas do board */}
         <div>
           <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 mb-1.5"><Columns3 size={13} /> Etapas do board</label>
-          <div className="space-y-1.5">
+          <div ref={colSort.containerRef} className="space-y-1.5">
             {cols.map((c, i) => (
-              <div key={c.id} className="flex items-center gap-2 bg-white/[0.02] border border-white/10 rounded-lg px-2 py-1.5">
+              <div
+                key={c.id}
+                {...colSort.itemProps(c.id)}
+                className={`flex items-center gap-2 bg-white/[0.02] border border-white/10 rounded-lg px-2 py-1.5 ${colSort.itemClass(c.id)}`}
+              >
+                <span {...colSort.handleProps(c.id)} title="Arraste para reordenar"
+                  className="drag-handle shrink-0 p-0.5 -ml-0.5 text-zinc-600 hover:text-zinc-300 cursor-grab active:cursor-grabbing">
+                  <GripVertical size={14} />
+                </span>
                 <span className="text-[10px] text-zinc-600 font-mono w-4 text-center shrink-0">{i + 1}</span>
                 <input value={c.label} onChange={(e) => renameColumn(c.id, e.target.value)} className="flex-1 bg-transparent text-sm text-white focus:outline-none min-w-0" />
-                <button onClick={() => moveColumn(c.id, -1)} disabled={i === 0} className="p-1 text-zinc-500 hover:text-white disabled:opacity-20 transition-colors"><ChevronUp size={14} /></button>
-                <button onClick={() => moveColumn(c.id, 1)} disabled={i === cols.length - 1} className="p-1 text-zinc-500 hover:text-white disabled:opacity-20 transition-colors"><ChevronDown size={14} /></button>
                 <button onClick={() => removeColumn(c.id)} disabled={cols.length <= 1} className="p-1 text-zinc-500 hover:text-rose-400 disabled:opacity-20 transition-colors"><Trash2 size={13} /></button>
               </div>
             ))}
           </div>
           <button onClick={addColumn} className="mt-2 flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors"><Plus size={13} /> Adicionar etapa</button>
-          <p className="text-[10px] text-zinc-600 mt-1.5">A última etapa marca a tarefa como concluída.</p>
+          <p className="text-[10px] text-zinc-600 mt-1.5">Arraste pelo <GripVertical size={10} className="inline -mt-0.5" /> para reordenar. A última etapa marca a tarefa como concluída.</p>
         </div>
 
         {/* Épicos com descrição */}
         <div>
           <label className="block text-xs font-medium text-zinc-400 mb-1.5">Épicos</label>
-          <div className="space-y-2">
+          <div ref={epicSort.containerRef} className="space-y-2">
             {epics.map(ep => (
-              <div key={ep.id} className="rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
+              <div
+                key={ep.id}
+                {...epicSort.itemProps(ep.id)}
+                className={`rounded-lg border border-white/10 bg-white/[0.02] p-2.5 ${epicSort.itemClass(ep.id)}`}
+              >
                 <div className="flex items-center gap-2">
+                  <span {...epicSort.handleProps(ep.id)} title="Arraste para reordenar"
+                    className="drag-handle shrink-0 p-0.5 -ml-1 text-zinc-600 hover:text-zinc-300 cursor-grab active:cursor-grabbing">
+                    <GripVertical size={14} />
+                  </span>
                   <FolderKanban size={13} className="text-zinc-500 shrink-0" />
                   <input value={ep.name} onChange={(e) => projectService.updateEpic(ep.id, { name: e.target.value })} className="flex-1 bg-transparent text-sm text-white font-medium focus:outline-none min-w-0" />
                   <button onClick={() => projectService.removeEpic(ep.id)} className="p-1 text-zinc-500 hover:text-rose-400 transition-colors shrink-0"><Trash2 size={13} /></button>
@@ -161,6 +175,9 @@ export function ProjectSettingsModal({ isOpen, projectId, onClose, onDelete }: P
             />
             <button onClick={() => { if (newEpic.trim()) { projectService.createEpic(project.id, newEpic.trim()); setNewEpic(''); } }} className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-zinc-300 transition-colors"><Plus size={16} /></button>
           </div>
+          {epics.length > 1 && (
+            <p className="text-[10px] text-zinc-600 mt-1.5">Arraste pelo <GripVertical size={10} className="inline -mt-0.5" /> para mudar a ordem — vale também para os filtros no board.</p>
+          )}
         </div>
       </div>
 
