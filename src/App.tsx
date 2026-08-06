@@ -31,6 +31,10 @@ import { GITHUB_URL, settingsService } from './services/settings';
 import { ManagePersonasModal } from './components/ManagePersonasModal';
 import { ProjectSettingsModal } from './components/ProjectSettingsModal';
 import { ProjectsManagerView } from './components/ProjectsManagerView';
+import { RoadmapReviewModal } from './components/RoadmapReviewModal';
+import { startBridgeListener, respondOk, respondError, PendingReview } from './services/bridge';
+import { applyPlan } from './services/roadmap';
+import { backupService } from './services/backup';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 import { projectService, sortEpics } from './services/projects';
@@ -86,6 +90,7 @@ export default function App() {
   const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [pendingReview, setPendingReview] = useState<PendingReview | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false);
   const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null);
@@ -117,6 +122,49 @@ export default function App() {
     notificationService.start();
     return () => notificationService.stop();
   }, []);
+
+  // Ponte local: agentes de IA propõem, o usuário confirma na tela de revisão.
+  useEffect(() => {
+    return startBridgeListener({
+      onReview: (review) => setPendingReview(review),
+      onCancel: (id) => setPendingReview(prev => (prev?.id === id ? null : prev)),
+      onApplied: (resumo) => {
+        loadTasks();
+        loadTags();
+        showToast(`Agente criou ${resumo.tarefas} tarefa(s) e ${resumo.epicos} épico(s).`);
+      },
+    });
+  }, []);
+
+  async function confirmPendingReview() {
+    if (!pendingReview) return;
+    const { id, plan } = pendingReview;
+    setPendingReview(null);
+    try {
+      const resumo = await applyPlan(plan);
+      await loadTasks();
+      loadTags();
+      respondOk(id, {
+        status: 'aplicado',
+        projectId: resumo.projectId,
+        criados: plan.summary,
+        avisos: plan.warnings,
+      });
+      showToast(`${resumo.tarefas} tarefa(s) criada(s) em "${plan.project.record.name}".`, {
+        actionLabel: 'Abrir projeto',
+        onAction: () => { setActiveProjectId(resumo.projectId); setActiveTab('project'); },
+      });
+    } catch (err) {
+      respondError(id, err instanceof Error ? err.message : 'Falha ao gravar.', 500);
+      showToast('Não foi possível aplicar a proposta do agente.');
+    }
+  }
+
+  function rejectPendingReview() {
+    if (!pendingReview) return;
+    respondError(pendingReview.id, 'Proposta recusada no TuDu.', 409);
+    setPendingReview(null);
+  }
 
   // Mantém o agendador de notificações sincronizado com as tarefas atuais.
   useEffect(() => {
@@ -154,6 +202,16 @@ export default function App() {
           setActiveTab('agenda'); setSelectedDateFilter(null); break;
         case 'l': case 'L':
           setActiveTab('list'); setSelectedDateFilter(null); break;
+        case 'p': case 'P':
+          setActiveTab('projects'); setSelectedDateFilter(null); break;
+        case 'e': case 'E':
+          setActiveTab('team'); setSelectedDateFilter(null); break;
+        case 'r': case 'R':
+          setActiveTab('stats'); setSelectedDateFilter(null); break;
+        case 't': case 'T':
+          e.preventDefault(); setIsPomodoroOpen(true); break;
+        case ',':
+          e.preventDefault(); setIsSettingsOpen(true); break;
       }
     }
     window.addEventListener('keydown', onKeyDown);
@@ -406,6 +464,18 @@ export default function App() {
     setNewTaskSubtasks(newTaskSubtasks.map(s => s.id === id ? { ...s, done: !s.done } : s));
   }
 
+  /** Marca/desmarca uma subtarefa direto no card, sem abrir a tarefa. */
+  async function handleToggleSubtask(task: Task, subtaskId: string) {
+    const subtasks = (task.subtasks ?? []).map(s => s.id === subtaskId ? { ...s, done: !s.done } : s);
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, subtasks } : t));
+    try {
+      await taskService.updateTask(task.id, { subtasks });
+    } catch {
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, subtasks: task.subtasks } : t));
+      showToast('Não foi possível salvar a subtarefa.');
+    }
+  }
+
   function removeSubtask(id: string) {
     setNewTaskSubtasks(newTaskSubtasks.filter(s => s.id !== id));
   }
@@ -641,7 +711,12 @@ export default function App() {
   // Cor do status (ponto/barra), também resolvendo pelas colunas do projeto.
   const statusColorOf = (task: Task) => resolveStatusColor(task.status, task.completed, columnsFor(projectById(task.projectId)));
 
-  const sidebarTags = availableTags;
+  // A barra lateral mostra as tags globais mais as do projeto aberto — tag de
+  // projeto não polui o contexto dos outros.
+  const sidebarTags = React.useMemo(
+    () => tagService.getVisibleTags(activeTab === 'project' ? activeProjectId ?? undefined : undefined).map(t => t.name),
+    [availableTags, activeTab, activeProjectId]
+  );
 
   return (
     <div className="flex flex-col h-screen w-full bg-[#09090b] text-[#e4e4e7] font-sans antialiased overflow-hidden">
@@ -946,6 +1021,7 @@ export default function App() {
                 <KanbanBoard
                   tasks={filteredTasks}
                   onToggleTask={handleToggleTask}
+                  onToggleSubtask={handleToggleSubtask}
                   onClickTask={handleEditTask}
                   onToggleNotifications={handleToggleNotifications}
                   onContextTask={openTaskMenu}
@@ -1003,6 +1079,7 @@ export default function App() {
               <ProjectView
                 project={projectById(activeProjectId)!}
                 epics={epics.filter(e => e.projectId === activeProjectId)}
+                onToggleSubtask={handleToggleSubtask}
                 tasks={activeTasks.filter(t => t.projectId === activeProjectId).filter(matchesCommonFilters)}
                 onEditProject={() => { setSettingsProjectId(activeProjectId); setIsProjectSettingsOpen(true); }}
                 onToggleTask={handleToggleTask}
@@ -1085,7 +1162,9 @@ export default function App() {
                           notificationsEnabled={task.notificationsEnabled}
                           recurrence={task.recurrence}
                           subtasks={task.subtasks}
+                          projectId={task.projectId}
                           onToggle={() => handleToggleTask(task)}
+                          onToggleSubtask={(subId) => handleToggleSubtask(task, subId)}
                           onToggleNotifications={() => handleToggleNotifications(task)}
                           onEdit={() => handleEditTask(task)}
                           onClick={() => handleViewTask(task)}
@@ -1284,7 +1363,12 @@ export default function App() {
                 )}
                 <div>
                   <label className="block text-xs font-medium text-zinc-400 mb-1">Tags</label>
-                  <TagInput selectedTags={newTaskTags} onChange={setNewTaskTags} />
+                  <TagInput
+                    selectedTags={newTaskTags}
+                    onChange={setNewTaskTags}
+                    projectId={newTaskProjectId || undefined}
+                    projectName={projectById(newTaskProjectId)?.name}
+                  />
                 </div>
               </div>
             )}
@@ -1423,11 +1507,17 @@ export default function App() {
         isOpen={isPaletteOpen}
         onClose={() => setIsPaletteOpen(false)}
         tasks={activeTasks}
+        projects={projects}
         onNavigate={(tab) => { setActiveTab(tab); setSelectedDateFilter(null); }}
         onNewTask={() => { resetModal(); setIsModalOpen(true); }}
         onOpenTask={(task) => handleViewTask(task)}
+        onOpenProject={(id) => { setActiveProjectId(id); setActiveTab('project'); setSelectedDateFilter(null); }}
         onOpenPomodoro={() => setIsPomodoroOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenShortcuts={() => setIsShortcutsOpen(true)}
+        onManageTags={() => setIsManageTagsModalOpen(true)}
+        onManagePersonas={() => setIsPersonasModalOpen(true)}
+        onExportBackup={() => backupService.exportData()}
         onSetTheme={(t) => themeService.set(t)}
         onQuickAdd={handleQuickAdd}
       />
@@ -1453,6 +1543,12 @@ export default function App() {
         onToggleComplete={handleToggleTask}
         onToggleNotifications={handleToggleNotifications}
         onDelete={moveTaskToTrash}
+      />
+
+      <RoadmapReviewModal
+        plan={pendingReview?.plan ?? null}
+        onConfirm={confirmPendingReview}
+        onCancel={rejectPendingReview}
       />
 
       <ToastHost toasts={toasts} onDismiss={dismissToast} />

@@ -2,16 +2,19 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Tag } from '../types';
 import { tagService, PREDEFINED_COLORS } from '../services/tags';
-import { Plus, X } from 'lucide-react';
+import { X, Globe, FolderKanban } from 'lucide-react';
 
 interface TagInputProps {
   selectedTags: string[];
   onChange: (tags: string[]) => void;
+  /** Projeto da tarefa: habilita as tags daquele projeto e a criação com escopo. */
+  projectId?: string;
+  projectName?: string;
 }
 
 const DROP_MAX_H = 200;
 
-export function TagInput({ selectedTags, onChange }: TagInputProps) {
+export function TagInput({ selectedTags, onChange, projectId, projectName }: TagInputProps) {
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -19,7 +22,7 @@ export function TagInput({ selectedTags, onChange }: TagInputProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setAvailableTags(tagService.getTags()); }, []);
+  useEffect(() => { setAvailableTags(tagService.getVisibleTags(projectId)); }, [projectId]);
 
   const reposition = () => {
     const r = wrapRef.current?.getBoundingClientRect();
@@ -43,12 +46,13 @@ export function TagInput({ selectedTags, onChange }: TagInputProps) {
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onScroll); };
   }, [showDropdown]);
 
-  const handleAddTag = (tagName: string, color?: string) => {
+  /** `scope` só importa ao criar uma tag nova. */
+  const handleAddTag = (tagName: string, color?: string, scope?: 'global' | 'project') => {
     const name = tagName.trim();
     if (!name || selectedTags.includes(name)) return;
     if (!availableTags.find(t => t.name.toLowerCase() === name.toLowerCase())) {
       const randomColor = PREDEFINED_COLORS[Math.floor(Math.random() * PREDEFINED_COLORS.length)];
-      const newTag = tagService.addTag(name, color || randomColor);
+      const newTag = tagService.addTag(name, color || randomColor, scope === 'project' ? projectId : undefined);
       setAvailableTags([...availableTags, newTag]);
     }
     onChange([...selectedTags, name]);
@@ -71,7 +75,7 @@ export function TagInput({ selectedTags, onChange }: TagInputProps) {
     <div ref={wrapRef}>
       <div className="min-h-[42px] w-full bg-white/5 border border-white/10 rounded-lg p-2 flex flex-wrap gap-2 items-center focus-within:border-indigo-500 transition-colors">
         {selectedTags.map(tag => {
-          const colorClass = tagService.getTagColor(tag);
+          const colorClass = tagService.getTagColor(tag, projectId);
           return (
             <span key={tag} className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-white bg-white/10 border border-white/10 rounded-md">
               <span className={`w-2 h-2 rounded-full ${colorClass}`}></span>
@@ -100,13 +104,30 @@ export function TagInput({ selectedTags, onChange }: TagInputProps) {
           {filteredTags.map(tag => (
             <button key={tag.id} type="button" onClick={() => handleAddTag(tag.name, tag.color)} className="w-full text-left px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 hover:text-white flex items-center gap-2 transition-colors">
               <span className={`w-2 h-2 rounded-full ${tag.color}`}></span>
-              {tag.name}
+              <span className="flex-1 truncate">{tag.name}</span>
+              {tag.projectId && (
+                <span className="shrink-0 flex items-center gap-1 text-[9px] uppercase font-bold tracking-wider text-indigo-400/80">
+                  <FolderKanban size={9} /> projeto
+                </span>
+              )}
             </button>
           ))}
           {canCreate && (
-            <button type="button" onClick={() => handleAddTag(inputValue)} className="w-full text-left px-3 py-2 text-sm text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-2 transition-colors border-t border-white/5">
-              <Plus size={14} /> Criar nova tag "{inputValue}"
-            </button>
+            // Com projeto em contexto, o escopo é escolhido na hora de criar —
+            // adivinhar aqui seria criar tag no lugar errado sem o usuário ver.
+            <div className="border-t border-white/5">
+              <button type="button" onClick={() => handleAddTag(inputValue, undefined, 'global')}
+                className="w-full text-left px-3 py-2 text-sm text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-2 transition-colors">
+                <Globe size={14} /> Criar "{inputValue}" como tag global
+              </button>
+              {projectId && (
+                <button type="button" onClick={() => handleAddTag(inputValue, undefined, 'project')}
+                  className="w-full text-left px-3 py-2 text-sm text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-2 transition-colors">
+                  <FolderKanban size={14} />
+                  <span className="truncate">Criar só em {projectName || 'neste projeto'}</span>
+                </button>
+              )}
+            </div>
           )}
         </div>,
         document.body

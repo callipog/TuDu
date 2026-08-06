@@ -15,6 +15,7 @@ interface ProjectViewProps {
   tasks: Task[]; // tarefas ativas do projeto
   onEditProject: () => void;
   onToggleTask: (task: Task) => void;
+  onToggleSubtask?: (task: Task, subtaskId: string) => void;
   onClickTask: (task: Task) => void;
   onToggleNotifications: (task: Task) => void;
   onContextTask?: (e: React.MouseEvent, task: Task) => void;
@@ -125,6 +126,7 @@ export function ProjectView({ project, epics, tasks, onEditProject, statusLabel,
           <KanbanBoard
             tasks={boardTasks}
             onToggleTask={board.onToggleTask}
+            onToggleSubtask={board.onToggleSubtask}
             onClickTask={board.onClickTask}
             onToggleNotifications={board.onToggleNotifications}
             onContextTask={board.onContextTask}

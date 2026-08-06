@@ -25,6 +25,22 @@ declare global {
         openExternal: (url: string) => Promise<void>;
         checkUpdates: () => Promise<{ status: string; message: string }>;
       };
+      bridge: {
+        status: () => Promise<{
+          running: boolean;
+          port: number | null;
+          error: string | null;
+          enabled: boolean;
+          autoApply: boolean;
+          token: string | null;
+          credentialsPath: string | null;
+        }>;
+        setEnabled: (v: boolean) => Promise<{ running: boolean; port: number | null; error: string | null; enabled: boolean; token: string | null }>;
+        setAutoApply: (v: boolean) => Promise<boolean>;
+        respond: (message: { id: string; ok: boolean; data?: unknown; error?: string; status?: number }) => void;
+        onRequest: (cb: (req: { id: string; kind: string; payload: any }) => void) => () => void;
+        onCancel: (cb: (msg: { id: string }) => void) => () => void;
+      };
       updates: {
         install: () => Promise<void>;
         onProgress: (cb: (pct: number) => void) => () => void;

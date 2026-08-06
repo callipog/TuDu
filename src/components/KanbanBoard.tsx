@@ -8,6 +8,8 @@ import { useSortableList } from '../hooks/useSortableList';
 interface KanbanBoardProps {
   tasks: Task[];
   onToggleTask: (task: Task) => void;
+  /** Marca/desmarca uma subtarefa direto no card, sem abrir a tarefa. */
+  onToggleSubtask?: (task: Task, subtaskId: string) => void;
   onClickTask?: (task: Task) => void;
   onToggleNotifications?: (task: Task) => void;
   onContextTask?: (e: React.MouseEvent, task: Task) => void;
@@ -27,7 +29,7 @@ const BORDER: Record<string, string> = {
   review: 'border-purple-500/20', done: 'border-emerald-500/20',
 };
 
-export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifications, onContextTask, onArchiveCompleted, onDragStart, onReorder, personaById, epicById, columns = DEFAULT_COLUMNS, onReorderColumns }: KanbanBoardProps) {
+export function KanbanBoard({ tasks, onToggleTask, onToggleSubtask, onClickTask, onToggleNotifications, onContextTask, onArchiveCompleted, onDragStart, onReorder, personaById, epicById, columns = DEFAULT_COLUMNS, onReorderColumns }: KanbanBoardProps) {
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [dragOverTask, setDragOverTask] = useState<string | null>(null);
   const doneId = doneColumnId(columns);
@@ -214,7 +216,9 @@ export function KanbanBoard({ tasks, onToggleTask, onClickTask, onToggleNotifica
                     subtasks={task.subtasks}
                     assignee={personaById?.(task.assigneeId)}
                     epic={epicById?.(task.epicId)}
+                    projectId={task.projectId}
                     onToggle={() => onToggleTask(task)}
+                    onToggleSubtask={onToggleSubtask ? (subId) => onToggleSubtask(task, subId) : undefined}
                     onToggleNotifications={() => onToggleNotifications?.(task)}
                     onClick={() => onClickTask?.(task)}
                     onContextMenu={onContextTask ? (e) => onContextTask(e, task) : undefined}

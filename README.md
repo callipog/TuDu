@@ -28,6 +28,11 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Personas** (nome, cargo, cor) atribuíveis às tarefas, com **avatar** nos cards.
 - **Visão Equipe**: carga de trabalho e desempenho por pessoa.
 
+### 🤖 Agentes de IA (MCP)
+- **Ponte local** (Configurações → Agentes de IA) para que assistentes criem projetos, épicos e tarefas por conversa — via [mcp-tudu](https://github.com/callipog/mcp-tudu), compatível com Claude Desktop, Claude Code e Gemini CLI.
+- **Nada é gravado sem revisão**: o agente propõe, o app mostra o que será criado e você confirma.
+- Porta apenas em `127.0.0.1`, protegida por token, e **desligada por padrão**.
+
 ### 🔔 Notificações
 - Sininho por tarefa e checkbox para ativar/desativar.
 - **Popups nativos do Windows**: um lembrete antecipado (antecedência configurável por tarefa — de 10 min a 1 dia) e outro na hora exata do prazo.
@@ -46,7 +51,8 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Command Palette** (`Ctrl/Cmd + K`): busque ações e tarefas, e **crie tarefas em linguagem natural** ("pagar boleto amanhã 14h #casa !alta").
 - **Timer de foco (Pomodoro)** com ciclos de foco/pausa e notificação ao terminar.
 - **Atalhos de teclado** com guia acessível pelo header ou tecla `?`; menu do app no logo.
-- **Gerenciador de tags**: crie tags e edite suas cores.
+- **Gerenciador de tags**: crie tags e edite suas cores, com **escopo global ou por projeto** — tag de projeto não polui o contexto dos outros.
+- **Subtarefas no card**: clique no contador para abrir o checklist e marcar sem abrir a tarefa.
 - **Mini calendário** semanal com atalho "Ir até hoje".
 
 ### Sistema (Configurações)

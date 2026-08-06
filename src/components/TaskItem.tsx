@@ -1,11 +1,33 @@
-import React from 'react';
-import { Check, Bell, BellOff, Pencil, Repeat, ListChecks } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Check, Bell, BellOff, Pencil, Repeat, ListChecks, ChevronDown } from 'lucide-react';
 import { Task, SubTask, Persona, Epic } from '../types';
 import { format, parseISO, isPast } from 'date-fns';
 import { tagService } from '../services/tags';
 import { Avatar } from './Avatar';
 
-export function TaskItem({ title, description, urgency, tags, completed, time, notificationsEnabled, recurrence, subtasks, assignee, epic, onToggle, onToggleNotifications, onEdit, onClick, onContextMenu }: { key?: React.Key; title: string; description?: string; urgency: Task['urgency']; tags: string[]; completed?: boolean; time?: string; notificationsEnabled?: boolean; recurrence?: Task['recurrence']; subtasks?: SubTask[]; assignee?: Persona; epic?: Epic; onToggle?: () => void; onToggleNotifications?: () => void; onEdit?: () => void; onClick?: () => void; onContextMenu?: (e: React.MouseEvent) => void }) {
+export function TaskItem({ title, description, urgency, tags, completed, time, notificationsEnabled, recurrence, subtasks, assignee, epic, projectId, onToggle, onToggleNotifications, onToggleSubtask, onEdit, onClick, onContextMenu }: { key?: React.Key; title: string; description?: string; urgency: Task['urgency']; tags: string[]; completed?: boolean; time?: string; notificationsEnabled?: boolean; recurrence?: Task['recurrence']; subtasks?: SubTask[]; assignee?: Persona; epic?: Epic; projectId?: string; onToggle?: () => void; onToggleNotifications?: () => void; onToggleSubtask?: (subtaskId: string) => void; onEdit?: () => void; onClick?: () => void; onContextMenu?: (e: React.MouseEvent) => void }) {
+  const [showSubtasks, setShowSubtasks] = useState(false);
+  // Altura medida do checklist: o conteúdo fica sempre montado, então
+  // scrollHeight já entrega o valor exato mesmo com o painel fechado.
+  const [panelHeight, setPanelHeight] = useState(0);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const toggleSubtasks = () => {
+    setPanelHeight(panelRef.current?.scrollHeight ?? 0);
+    setShowSubtasks(v => !v);
+  };
+
+  const semAnimacao = typeof window !== 'undefined'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const panelStyle: React.CSSProperties = {
+    maxHeight: showSubtasks ? panelHeight : 0,
+    opacity: showSubtasks ? 1 : 0,
+    marginTop: showSubtasks ? '0.75rem' : 0,
+    transition: semAnimacao
+      ? undefined
+      : 'max-height 0.22s cubic-bezier(0.2, 0.9, 0.25, 1), opacity 0.18s ease-out, margin-top 0.22s cubic-bezier(0.2, 0.9, 0.25, 1)',
+  };
   const urgencyStyles = {
     low: 'hover:border-emerald-500/50',
     medium: 'hover:border-amber-500/50',
@@ -63,7 +85,7 @@ export function TaskItem({ title, description, urgency, tags, completed, time, n
       <div className="mt-4 flex items-center justify-between gap-2 pl-9 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           {tags.map((tag, idx) => {
-            const bgBase = tagService.getTagColor(tag);
+            const bgBase = tagService.getTagColor(tag, projectId);
             return (
                <span key={`${tag}-${idx}`} className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium text-zinc-300 bg-white/5 border border-white/10 rounded-md truncate max-w-full">
                 <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${bgBase}`}></span>
@@ -72,9 +94,24 @@ export function TaskItem({ title, description, urgency, tags, completed, time, n
             );
           })}
           {subtaskTotal > 0 && (
-            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-zinc-400 bg-white/5 border border-white/10 rounded-md" title="Subtarefas concluídas">
-              <ListChecks size={11} /> {subtaskDone}/{subtaskTotal}
-            </span>
+            onToggleSubtask ? (
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleSubtasks(); }}
+                title={showSubtasks ? 'Ocultar subtarefas' : 'Marcar subtarefas sem abrir a tarefa'}
+                className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium border rounded-md transition-colors ${
+                  showSubtasks
+                    ? 'text-white bg-indigo-500/20 border-indigo-500/40'
+                    : 'text-zinc-400 bg-white/5 border-white/10 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <ListChecks size={11} /> {subtaskDone}/{subtaskTotal}
+                <ChevronDown size={10} className={`transition-transform ${showSubtasks ? 'rotate-180' : ''}`} />
+              </button>
+            ) : (
+              <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-zinc-400 bg-white/5 border border-white/10 rounded-md" title="Subtarefas concluídas">
+                <ListChecks size={11} /> {subtaskDone}/{subtaskTotal}
+              </span>
+            )
           )}
           {epic && (
             <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-zinc-400 bg-white/5 border border-white/10 rounded-md truncate max-w-[120px]" title={`Épico: ${epic.name}`}>
@@ -98,6 +135,41 @@ export function TaskItem({ title, description, urgency, tags, completed, time, n
           )}
         </div>
       </div>
+
+      {/* Checklist inline: marcar sem precisar abrir a tarefa. Fica sempre
+          montado para que fechar também seja animado — desmontar cortaria a
+          transição pela metade. */}
+      {subtaskTotal > 0 && subtasks && onToggleSubtask && (
+        <div
+          ref={panelRef}
+          onClick={(e) => e.stopPropagation()}
+          aria-hidden={!showSubtasks}
+          style={panelStyle}
+          className={`subtasks-panel ${showSubtasks ? 'is-open' : 'pointer-events-none'}`}
+        >
+          <div>
+            <div className="ml-9 pt-3 border-t border-white/10 space-y-1.5">
+              {subtasks.map(sub => (
+                <button
+                  key={sub.id}
+                  tabIndex={showSubtasks ? 0 : -1}
+                  onClick={(e) => { e.stopPropagation(); onToggleSubtask(sub.id); }}
+                  className="w-full flex items-center gap-2 text-left group/sub py-0.5"
+                >
+                  <span className={`shrink-0 w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ${
+                    sub.done ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-500 group-hover/sub:border-indigo-400'
+                  }`}>
+                    {sub.done && <Check size={9} strokeWidth={4} />}
+                  </span>
+                  <span className={`text-xs break-words ${sub.done ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>
+                    {sub.title}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

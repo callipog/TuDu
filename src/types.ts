@@ -7,6 +7,8 @@ export interface Tag {
   id: string;
   name: string;
   color: string;
+  /** Restringe a tag a um projeto. Ausente = tag global (vale em todo lugar). */
+  projectId?: string;
 }
 
 export interface SubTask {

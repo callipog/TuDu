@@ -6,7 +6,9 @@ import { backupService } from '../services/backup';
 import { taskService } from '../services/tasks';
 import { tagService } from '../services/tags';
 import { themeService, Theme } from '../services/theme';
-import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee } from 'lucide-react';
+import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Eye, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee, Plug, Zap } from 'lucide-react';
+
+type BridgeStatus = Awaited<ReturnType<NonNullable<Window['tudu']>['bridge']['status']>>;
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -41,8 +43,29 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
   const [updateReady, setUpdateReady] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(themeService.get());
+  const [bridge, setBridge] = useState<BridgeStatus | null>(null);
+  const [showToken, setShowToken] = useState(false);
+  const [tokenCopied, setTokenCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isElectron = settingsService.isElectron();
+
+  async function toggleBridge(v: boolean) {
+    const result = await window.tudu?.bridge.setEnabled(v);
+    if (result) setBridge(b => (b ? { ...b, ...result } : b));
+    setShowToken(false);
+  }
+
+  async function toggleAutoApply(v: boolean) {
+    const autoApply = await window.tudu?.bridge.setAutoApply(v);
+    setBridge(b => (b ? { ...b, autoApply: !!autoApply } : b));
+  }
+
+  function copyToken() {
+    if (!bridge?.token) return;
+    navigator.clipboard?.writeText(bridge.token);
+    setTokenCopied(true);
+    setTimeout(() => setTokenCopied(false), 1500);
+  }
 
   useEffect(() => {
     const unsub = settingsService.onUpdate({
@@ -90,7 +113,9 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
   useEffect(() => {
     if (isOpen) {
       settingsService.get().then(setSettings);
+      window.tudu?.bridge.status().then(setBridge).catch(() => setBridge(null));
       setCopied(false);
+      setShowToken(false);
       setTheme(themeService.get());
     }
   }, [isOpen]);
@@ -249,6 +274,64 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
             </button>
           </div>
           <p className="text-[11px] text-zinc-600 mt-2">O reporte abre seu e-mail para enviar a {REPORT_EMAIL}.</p>
+        </div>
+
+        {/* Ponte para agentes de IA */}
+        <div>
+          <p className={sectionTitle}>Agentes de IA (MCP)</p>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+            <p className="text-[11px] text-zinc-500">
+              Abre uma porta local (só 127.0.0.1, protegida por token) para que assistentes como o
+              Claude e o Gemini CLI criem projetos e tarefas aqui. Fica desligada por padrão.
+            </p>
+
+            <CheckRow
+              checked={!!bridge?.enabled}
+              onChange={toggleBridge}
+              disabled={!isElectron}
+              icon={<Plug size={15} />}
+              label="Aceitar conexões de agentes"
+              hint={
+                bridge?.error
+                  ? `Erro: ${bridge.error}`
+                  : bridge?.running
+                    ? `Ativa em 127.0.0.1:${bridge.port}`
+                    : 'Desligada'
+              }
+            />
+
+            {bridge?.running && (
+              <>
+                <div>
+                  <p className="text-[11px] text-zinc-500 mb-1">Token de acesso</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 min-w-0 text-[11px] text-zinc-300 bg-black/40 border border-white/10 rounded-lg px-3 py-2 truncate">
+                      {showToken ? bridge.token : '•'.repeat(48)}
+                    </code>
+                    <button onClick={() => setShowToken(v => !v)} title={showToken ? 'Ocultar' : 'Mostrar'}
+                      className="p-2 rounded-lg text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors">
+                      {showToken ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                    <button onClick={copyToken} title="Copiar token"
+                      className="p-2 rounded-lg text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors">
+                      {tokenCopied ? <Check size={15} className="text-emerald-400" /> : <Copy size={15} />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-zinc-600 mt-1.5">
+                    Trate como senha. O servidor MCP lê isso sozinho de <code>bridge.json</code> na pasta de dados.
+                  </p>
+                </div>
+
+                <CheckRow
+                  checked={!!bridge?.autoApply}
+                  onChange={toggleAutoApply}
+                  icon={<Zap size={15} />}
+                  label="Aplicar sem confirmar"
+                  hint="Sem isso, cada proposta abre uma revisão antes de gravar. Recomendo manter desligado."
+                />
+              </>
+            )}
+          </div>
         </div>
 
         {/* Sobre */}

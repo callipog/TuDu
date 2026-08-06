@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const bridge = require('./bridge.cjs');
 const isDev = process.env.NODE_ENV === 'development';
 
 // Auto-update (só funciona em builds empacotados e publicados no GitHub Releases).
@@ -191,6 +192,22 @@ function sendUpdate(channel, data) {
   }
 }
 
+// ---- Ponte local para agentes de IA (MCP) ----
+// Desligada por padrão: abrir uma porta, mesmo local, é opt-in consciente.
+
+const bridgeDeps = {
+  userDataPath: app.getPath('userData'),
+  getVersion: () => app.getVersion(),
+  sendToRenderer: (channel, data) => sendUpdate(channel, data),
+  isRendererReady: () => !!mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading(),
+  focusWindow: () => showWindow(),
+};
+
+function startBridgeIfEnabled() {
+  const s = readSettings();
+  if (s.bridgeEnabled) bridge.start({ ...bridgeDeps, port: s.bridgePort });
+}
+
 function createTray() {
   let image = nativeImage.createFromPath(iconPath);
   if (!image.isEmpty()) {
@@ -329,6 +346,33 @@ app.whenReady().then(() => {
 
   ipcMain.handle('settings:check-updates', () => runUpdateCheck());
 
+  // ---- Ponte local (MCP) ----
+
+  ipcMain.handle('bridge:status', () => ({
+    ...bridge.getState(),
+    enabled: !!readSettings().bridgeEnabled,
+    autoApply: !!readSettings().bridgeAutoApply,
+    token: bridge.getState().running ? bridge.getToken() : null,
+  }));
+
+  ipcMain.handle('bridge:set-enabled', (_event, enabled) => {
+    writeSettings({ bridgeEnabled: !!enabled });
+    const result = enabled
+      ? bridge.start({ ...bridgeDeps, port: readSettings().bridgePort })
+      : bridge.stop();
+    return { ...result, enabled: !!enabled, token: enabled ? bridge.getToken() : null };
+  });
+
+  ipcMain.handle('bridge:set-auto-apply', (_event, autoApply) => {
+    writeSettings({ bridgeAutoApply: !!autoApply });
+    return !!autoApply;
+  });
+
+  // Resposta do renderer a uma operação pedida pela ponte.
+  ipcMain.on('bridge:response', (_event, message) => bridge.resolveFromRenderer(message));
+
+  startBridgeIfEnabled();
+
   ipcMain.handle('update:install', () => {
     if (autoUpdater) {
       app.isQuitting = true;
@@ -367,4 +411,5 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true;
+  bridge.stop();
 });

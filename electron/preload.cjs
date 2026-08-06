@@ -21,6 +21,25 @@ contextBridge.exposeInMainWorld('tudu', {
     checkUpdates: () => ipcRenderer.invoke('settings:check-updates'),
   },
 
+  // Ponte local para agentes de IA. O renderer é quem executa as operações
+  // (só ele fala com o IndexedDB); aqui só trafegam pedidos e respostas.
+  bridge: {
+    status: () => ipcRenderer.invoke('bridge:status'),
+    setEnabled: (v) => ipcRenderer.invoke('bridge:set-enabled', !!v),
+    setAutoApply: (v) => ipcRenderer.invoke('bridge:set-auto-apply', !!v),
+    respond: (message) => ipcRenderer.send('bridge:response', message),
+    onRequest: (cb) => {
+      const h = (_e, req) => cb(req);
+      ipcRenderer.on('bridge:request', h);
+      return () => ipcRenderer.removeListener('bridge:request', h);
+    },
+    onCancel: (cb) => {
+      const h = (_e, msg) => cb(msg);
+      ipcRenderer.on('bridge:cancel', h);
+      return () => ipcRenderer.removeListener('bridge:cancel', h);
+    },
+  },
+
   updates: {
     install: () => ipcRenderer.invoke('update:install'),
     onProgress: (cb) => {

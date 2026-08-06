@@ -50,6 +50,14 @@
     .kanban-card-enter { animation: none; }
   }
 
+  /* O checklist inline do card (abre/fecha ao clicar no chip de subtarefas)
+     tem suas propriedades animadas no style inline, em TaskItem: max-height
+     sai de uma medição do conteúdo, e regra em @layer perderia para o inline
+     de qualquer forma. Aqui fica só o recorte. */
+  .subtasks-panel {
+    overflow: hidden;
+  }
+
   /* ---- Reordenação por arrasto (épicos, etapas do board) ------------------
      O deslize dos itens para a nova posição é feito em JS (FLIP, veja
      `useSortableList`); aqui ficam só os estados visuais. */

@@ -1,24 +1,31 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Task } from '../types';
+import { Task, Project } from '../types';
 import { Theme } from '../services/theme';
 import { parseQuickAdd } from '../services/quickAdd';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   Search, Inbox, Clock, Calendar, CalendarClock, List, BarChart3, Archive, Trash2,
-  Plus, Timer, Settings, Moon, Sun, Monitor, Coffee, CornerDownLeft, FileText, Sparkles, Users
+  Plus, Timer, Settings, Moon, Sun, Monitor, Coffee, CornerDownLeft, FileText, Sparkles, Users,
+  FolderKanban, Tag as TagIcon, Download, Keyboard
 } from 'lucide-react';
 
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
   tasks: Task[];
+  projects: Project[];
   onNavigate: (tab: string) => void;
   onNewTask: () => void;
   onOpenTask: (task: Task) => void;
+  onOpenProject: (id: string) => void;
   onOpenPomodoro: () => void;
   onOpenSettings: () => void;
+  onOpenShortcuts: () => void;
+  onManageTags: () => void;
+  onManagePersonas: () => void;
+  onExportBackup: () => void;
   onSetTheme: (t: Theme) => void;
   onQuickAdd: (input: string) => void;
 }
@@ -32,7 +39,7 @@ interface Command {
   keywords?: string;
 }
 
-export function CommandPalette({ isOpen, onClose, tasks, onNavigate, onNewTask, onOpenTask, onOpenPomodoro, onOpenSettings, onSetTheme, onQuickAdd }: CommandPaletteProps) {
+export function CommandPalette({ isOpen, onClose, tasks, projects, onNavigate, onNewTask, onOpenTask, onOpenProject, onOpenPomodoro, onOpenSettings, onOpenShortcuts, onManageTags, onManagePersonas, onExportBackup, onSetTheme, onQuickAdd }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -48,25 +55,41 @@ export function CommandPalette({ isOpen, onClose, tasks, onNavigate, onNewTask, 
 
   const commands: Command[] = useMemo(() => {
     const nav = (tab: string) => () => { onNavigate(tab); onClose(); };
+    const act = (fn: () => void) => () => { fn(); onClose(); };
     return [
-      { id: 'new', label: 'Nova tarefa', hint: 'Ação', icon: <Plus size={16} />, run: () => { onNewTask(); onClose(); }, keywords: 'criar adicionar' },
+      { id: 'new', label: 'Nova tarefa', hint: 'Ação', icon: <Plus size={16} />, run: act(onNewTask), keywords: 'criar adicionar' },
       { id: 'inbox', label: 'Ir para Caixa de Entrada', hint: 'Navegar', icon: <Inbox size={16} />, run: nav('inbox') },
       { id: 'today', label: 'Ir para Hoje', hint: 'Navegar', icon: <Clock size={16} />, run: nav('today') },
       { id: 'calendar', label: 'Ir para Calendário', hint: 'Navegar', icon: <Calendar size={16} />, run: nav('calendar') },
       { id: 'agenda', label: 'Ir para Agenda', hint: 'Navegar', icon: <CalendarClock size={16} />, run: nav('agenda') },
       { id: 'list', label: 'Ir para Lista', hint: 'Navegar', icon: <List size={16} />, run: nav('list') },
+      { id: 'projects', label: 'Ir para Projetos', hint: 'Navegar', icon: <FolderKanban size={16} />, run: nav('projects'), keywords: 'gerenciador projeto board épico' },
       { id: 'stats', label: 'Ir para Relatórios', hint: 'Navegar', icon: <BarChart3 size={16} />, run: nav('stats') },
       { id: 'team', label: 'Ir para Equipe', hint: 'Navegar', icon: <Users size={16} />, run: nav('team') },
       { id: 'archived', label: 'Ir para Arquivados', hint: 'Navegar', icon: <Archive size={16} />, run: nav('archived') },
       { id: 'trash', label: 'Ir para Lixeira', hint: 'Navegar', icon: <Trash2 size={16} />, run: nav('trash') },
-      { id: 'pomodoro', label: 'Abrir timer de foco (Pomodoro)', hint: 'Ação', icon: <Timer size={16} />, run: () => { onOpenPomodoro(); onClose(); } },
-      { id: 'settings', label: 'Abrir Configurações', hint: 'Ação', icon: <Settings size={16} />, run: () => { onOpenSettings(); onClose(); } },
-      { id: 'theme-dark', label: 'Tema: Escuro', hint: 'Aparência', icon: <Moon size={16} />, run: () => { onSetTheme('dark'); onClose(); } },
-      { id: 'theme-light', label: 'Tema: Claro', hint: 'Aparência', icon: <Sun size={16} />, run: () => { onSetTheme('light'); onClose(); } },
-      { id: 'theme-sepia', label: 'Tema: Sépia', hint: 'Aparência', icon: <Coffee size={16} />, run: () => { onSetTheme('sepia'); onClose(); } },
-      { id: 'theme-system', label: 'Tema: Sistema', hint: 'Aparência', icon: <Monitor size={16} />, run: () => { onSetTheme('system'); onClose(); } },
+      { id: 'pomodoro', label: 'Abrir timer de foco (Pomodoro)', hint: 'Ação', icon: <Timer size={16} />, run: act(onOpenPomodoro) },
+      { id: 'tags', label: 'Gerenciar tags', hint: 'Ação', icon: <TagIcon size={16} />, run: act(onManageTags), keywords: 'etiqueta cor global projeto' },
+      { id: 'personas', label: 'Gerenciar equipe (personas)', hint: 'Ação', icon: <Users size={16} />, run: act(onManagePersonas), keywords: 'pessoa responsável' },
+      { id: 'backup', label: 'Exportar backup', hint: 'Ação', icon: <Download size={16} />, run: act(onExportBackup), keywords: 'salvar json exportar dados' },
+      { id: 'shortcuts', label: 'Ver atalhos de teclado', hint: 'Ação', icon: <Keyboard size={16} />, run: act(onOpenShortcuts) },
+      { id: 'settings', label: 'Abrir Configurações', hint: 'Ação', icon: <Settings size={16} />, run: act(onOpenSettings) },
+      { id: 'theme-dark', label: 'Tema: Escuro', hint: 'Aparência', icon: <Moon size={16} />, run: act(() => onSetTheme('dark')) },
+      { id: 'theme-light', label: 'Tema: Claro', hint: 'Aparência', icon: <Sun size={16} />, run: act(() => onSetTheme('light')) },
+      { id: 'theme-sepia', label: 'Tema: Sépia', hint: 'Aparência', icon: <Coffee size={16} />, run: act(() => onSetTheme('sepia')) },
+      { id: 'theme-system', label: 'Tema: Sistema', hint: 'Aparência', icon: <Monitor size={16} />, run: act(() => onSetTheme('system')) },
+      // Salto direto para cada board — com muitos projetos, é o caminho mais
+      // curto entre "lembrei do projeto" e "estou nele".
+      ...projects.filter(p => !p.archived).map(p => ({
+        id: `project-${p.id}`,
+        label: `Abrir projeto: ${p.name}`,
+        hint: 'Projeto',
+        icon: <FolderKanban size={16} />,
+        run: act(() => onOpenProject(p.id)),
+        keywords: 'board kanban projeto',
+      })),
     ];
-  }, [onNavigate, onNewTask, onOpenPomodoro, onOpenSettings, onSetTheme, onClose]);
+  }, [projects, onNavigate, onNewTask, onOpenProject, onOpenPomodoro, onOpenSettings, onOpenShortcuts, onManageTags, onManagePersonas, onExportBackup, onSetTheme, onClose]);
 
   const q = query.trim().toLowerCase();
 
