@@ -1,6 +1,7 @@
 node_modules/
 # O servidor MCP mora no próprio repositório: github.com/callipog/mcp-tudu
 mcp-server/
+mcp-tudu/
 build/
 dist/
 dist-electron/

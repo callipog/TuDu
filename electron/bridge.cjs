@@ -3,10 +3,10 @@
  *
  * Desenho e limites:
  *  - Escuta SOMENTE em 127.0.0.1. Nunca em 0.0.0.0.
- *  - Todo request exige `Authorization: Bearer <token>`; o token nasce no
- *    primeiro uso e mora em `userData/bridge.json` (só o usuário lê).
- *  - Requests com cabeçalho `Origin` são recusados: navegador nenhum precisa
- *    falar com a ponte, e isso mata CSRF vindo de uma aba aberta.
+ *  - Todo request exige `Authorization: Bearer <token>`; o token é ROTACIONADO
+ *    a cada início e mora em `userData/bridge.json`, com ACL restrita ao dono.
+ *  - Requests com `Origin`/`Referer` (páginas web) e com `Host` fora de
+ *    loopback (DNS rebinding) são recusados: mata CSRF e rebinding de uma aba.
  *  - O processo principal NÃO toca no banco. Os dados vivem no IndexedDB do
  *    renderer, então toda operação é repassada por IPC e respondida por lá.
  *  - Escrita nunca é silenciosa: o renderer abre uma revisão para o usuário
@@ -16,6 +16,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
 
 const DEFAULT_PORT = 8787;
 const MAX_BODY_BYTES = 1024 * 1024; // 1 MB — roadmap é texto, não precisa de mais
@@ -33,19 +34,38 @@ function credentialsPath() {
   return path.join(deps.userDataPath, 'bridge.json');
 }
 
-/** Lê o token existente ou cria um novo (32 bytes aleatórios). */
+/**
+ * Restringe bridge.json ao usuário atual.
+ *
+ * O `mode: 0o600` do writeFileSync é ignorado pelo Node no Windows (o arquivo
+ * sai 0o666), então aqui aplicamos a ACL de verdade via icacls: remove a
+ * herança e concede acesso só ao dono. Best-effort — se falhar, o arquivo
+ * ainda herda a ACL do perfil do usuário (protegido de OUTROS usuários, mas
+ * não de processos do próprio usuário; isso é limite conhecido do modelo).
+ */
+function restrictFilePermissions(file) {
+  if (process.platform !== 'win32') return; // no *nix o mode 0o600 já vale
+  const user = process.env.USERNAME;
+  if (!user) return;
+  // /inheritance:r remove herança; /grant:r concede só ao usuário.
+  execFile('icacls', [file, '/inheritance:r', '/grant:r', `${user}:F`], () => { /* best-effort */ });
+}
+
+/**
+ * Gera um token novo a cada início da ponte.
+ *
+ * Rotacionar (em vez de reusar o salvo) limita o dano de um token roubado à
+ * sessão atual: se algo capturou o token — por exemplo ocupando a porta antes
+ * do app subir —, ele deixa de valer assim que a ponte real inicia. O MCP lê o
+ * arquivo a cada chamada, então a rotação é transparente para ele.
+ */
 function loadOrCreateCredentials(port) {
   const file = credentialsPath();
-  let token = null;
-  try {
-    const saved = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    if (typeof saved.token === 'string' && saved.token.length >= 32) token = saved.token;
-  } catch { /* primeiro uso ou arquivo corrompido: gera de novo */ }
-
-  if (!token) token = crypto.randomBytes(32).toString('hex');
+  const token = crypto.randomBytes(32).toString('hex');
 
   try {
     fs.writeFileSync(file, JSON.stringify({ port, token }, null, 2), { encoding: 'utf-8', mode: 0o600 });
+    restrictFilePermissions(file);
   } catch (err) {
     console.error('[bridge] não foi possível gravar bridge.json', err);
   }
@@ -130,10 +150,25 @@ function send(res, status, body) {
   res.end(json);
 }
 
+/** Aceita só Host de loopback (defesa contra DNS rebinding). Porta é ignorada. */
+function hostIsLoopback(hostHeader) {
+  if (!hostHeader) return true; // cliente sem Host (raro): o bind em 127.0.0.1 já protege
+  const name = String(hostHeader).split(':')[0].toLowerCase().replace(/^\[|\]$/g, '');
+  return name === '127.0.0.1' || name === 'localhost' || name === '::1';
+}
+
 async function handle(req, res, token) {
-  // Nenhum cliente legítimo da ponte é um navegador.
-  if (req.headers.origin) {
+  // Nenhum cliente legítimo da ponte é um navegador. `Origin` e `Referer` só
+  // aparecem em requisições disparadas por página web.
+  if (req.headers.origin || req.headers.referer) {
     send(res, 403, { error: 'Requisições de navegador não são aceitas.' });
+    return;
+  }
+
+  // DNS rebinding: uma página em evil.com que resolva para 127.0.0.1 chega com
+  // Host: evil.com. Aceitar só Host de loopback fecha essa classe de ataque.
+  if (!hostIsLoopback(req.headers.host)) {
+    send(res, 403, { error: 'Host não permitido.' });
     return;
   }
 
