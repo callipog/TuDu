@@ -1,16 +1,17 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Task, Attachment } from '../types';
 import { projectService, sortEpics } from '../services/projects';
 import { PREDEFINED_COLORS } from '../services/tags';
-import { PROJECT_STATUS_BADGE } from '../services/boards';
+import { PROJECT_STATUS_BADGE, columnsFor } from '../services/boards';
+import { exportProjectPdf } from '../services/projectExport';
 import { Avatar } from './Avatar';
 import { Markdown } from './Markdown';
 import { AttachmentsEditor } from './Attachments';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Plus, Search, FolderKanban, Settings2, Trash2, ExternalLink, FileText, Upload, Pencil, Check, X, CalendarRange } from 'lucide-react';
+import { Plus, Search, FolderKanban, Settings2, Trash2, ExternalLink, FileText, Upload, Pencil, Check, X, CalendarRange, FileDown } from 'lucide-react';
 
 interface ProjectsManagerViewProps {
   tasks: Task[];
@@ -29,12 +30,68 @@ export function ProjectsManagerView({ tasks, onOpenProject, onEditProject, onDel
   const [readmeDraft, setReadmeDraft] = useState('');
   const mdRef = useRef<HTMLInputElement>(null);
 
+  // Largura do frame da lista, ajustável arrastando o divisor. Persiste entre sessões.
+  const outerRef = useRef<HTMLDivElement>(null);
+  const [listWidth, setListWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem('tudu_projects_list_width'));
+    return saved >= 200 && saved <= 620 ? saved : 288;
+  });
+  const resizing = useRef(false);
+  const startResize = (e: React.PointerEvent) => { resizing.current = true; e.preventDefault(); document.body.style.userSelect = 'none'; };
+  useEffect(() => { localStorage.setItem('tudu_projects_list_width', String(listWidth)); }, [listWidth]);
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
+      if (!resizing.current || !outerRef.current) return;
+      const left = outerRef.current.getBoundingClientRect().left;
+      setListWidth(Math.min(620, Math.max(200, e.clientX - left)));
+    };
+    const up = () => { if (resizing.current) { resizing.current = false; document.body.style.userSelect = ''; } };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+  }, []);
+
+  // Arraste horizontal na lista: os nomes longos são cortados na coluna estreita;
+  // "grab and pan" lateral deixa lê-los sem alargar a coluna.
+  const listRef = useRef<HTMLDivElement>(null);
+  const drag = useRef({ active: false, startX: 0, scroll: 0, moved: false });
+  const onListPointerDown = (e: React.PointerEvent) => {
+    const el = listRef.current;
+    if (!el) return;
+    drag.current = { active: true, startX: e.clientX, scroll: el.scrollLeft, moved: false };
+  };
+  const onListPointerMove = (e: React.PointerEvent) => {
+    const el = listRef.current;
+    if (!el || !drag.current.active) return;
+    const dx = e.clientX - drag.current.startX;
+    if (Math.abs(dx) > 4) {
+      drag.current.moved = true;
+      el.setPointerCapture?.(e.pointerId); // segue o ponteiro mesmo saindo da lista
+    }
+    el.scrollLeft = drag.current.scroll - dx;
+  };
+  const endListDrag = () => { drag.current.active = false; };
+
+  const personaById = (id?: string) => id ? personas.find(p => p.id === id) : undefined;
+
   const filtered = projects.filter(p => !search.trim() || p.name.toLowerCase().includes(search.toLowerCase()));
   const sel = projects.find(p => p.id === selectedId) || null;
   const selEpics = sel ? sortEpics(epics.filter(e => e.projectId === sel.id)) : [];
   const selTasks = sel ? tasks.filter(t => t.projectId === sel.id) : [];
   const done = selTasks.filter(t => t.completed).length;
   const pct = selTasks.length > 0 ? Math.round((done / selTasks.length) * 100) : 0;
+
+  const handleExportPdf = () => {
+    if (!sel) return;
+    exportProjectPdf({
+      project: sel,
+      epics: selEpics,
+      tasks: selTasks,
+      columns: columnsFor(sel),
+      personaById,
+      statusBadge: PROJECT_STATUS_BADGE,
+    });
+  };
 
   const createProject = async () => {
     const p = await projectService.create({ name: 'Novo projeto', color: PREDEFINED_COLORS[Math.floor(Math.random() * PREDEFINED_COLORS.length)] });
@@ -55,9 +112,9 @@ export function ProjectsManagerView({ tasks, onOpenProject, onEditProject, onDel
   const saveReadme = () => { if (sel) projectService.update(sel.id, { readme: readmeDraft }); setEditingReadme(false); };
 
   return (
-    <div className="flex-1 min-h-0 flex gap-4">
+    <div ref={outerRef} className="flex-1 min-h-0 flex">
       {/* Lista de projetos */}
-      <div className="w-72 shrink-0 flex flex-col min-h-0 bg-[#121214] border border-white/5 rounded-2xl">
+      <div style={{ width: listWidth }} className="shrink-0 flex flex-col min-h-0 bg-[#121214] border border-white/5 rounded-2xl">
         <div className="p-3 border-b border-white/5 shrink-0 space-y-2">
           <button onClick={createProject} className="w-full flex items-center justify-center gap-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg py-2 transition-colors">
             <Plus size={15} /> Novo projeto
@@ -67,22 +124,39 @@ export function ProjectsManagerView({ tasks, onOpenProject, onEditProject, onDel
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar..." className="w-full pl-8 pr-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
           </div>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-2 space-y-1">
+        <div
+          ref={listRef}
+          onPointerDown={onListPointerDown}
+          onPointerMove={onListPointerMove}
+          onPointerUp={endListDrag}
+          onPointerLeave={endListDrag}
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-auto custom-scrollbar p-2 space-y-1 cursor-grab active:cursor-grabbing select-none"
+        >
           {filtered.length === 0 ? (
             <p className="text-xs text-zinc-500 italic text-center py-6">Nenhum projeto.</p>
           ) : filtered.map(p => (
-            <button key={p.id} onClick={() => { setSelectedId(p.id); setEditingReadme(false); }}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${selectedId === p.id ? 'bg-white/10' : 'hover:bg-white/5'} ${p.archived ? 'opacity-50' : ''}`}>
+            <button key={p.id}
+              onClick={() => { if (drag.current.moved) return; setSelectedId(p.id); setEditingReadme(false); }}
+              className={`w-max min-w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${selectedId === p.id ? 'bg-white/10' : 'hover:bg-white/5'} ${p.archived ? 'opacity-50' : ''}`}>
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${p.color}`}></span>
-              <span className="flex-1 min-w-0 text-sm text-white truncate">{p.name}</span>
-              <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded-full border ${PROJECT_STATUS_BADGE[p.status]?.cls || ''}`}>{PROJECT_STATUS_BADGE[p.status]?.label}</span>
+              <span className="text-sm text-white whitespace-nowrap">{p.name}</span>
+              <span className={`shrink-0 ml-2 text-[9px] uppercase font-bold px-1.5 py-0.5 rounded-full border ${PROJECT_STATUS_BADGE[p.status]?.cls || ''}`}>{PROJECT_STATUS_BADGE[p.status]?.label}</span>
             </button>
           ))}
         </div>
       </div>
 
+      {/* Divisor arrastável: ajusta a largura do frame da lista */}
+      <div
+        onPointerDown={startResize}
+        title="Arraste para ajustar a largura"
+        className="group shrink-0 w-3 mx-0.5 flex items-center justify-center cursor-col-resize"
+      >
+        <div className="w-0.5 h-10 rounded-full bg-white/10 group-hover:bg-indigo-500/60 transition-colors"></div>
+      </div>
+
       {/* Detalhe do projeto */}
-      <div className="flex-1 min-h-0 bg-[#121214] border border-white/5 rounded-2xl overflow-hidden flex flex-col">
+      <div className="flex-1 min-w-0 min-h-0 bg-[#121214] border border-white/5 rounded-2xl overflow-hidden flex flex-col">
         {!sel ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center text-zinc-500">
             <FolderKanban size={40} className="mb-4 opacity-40" />
@@ -115,6 +189,7 @@ export function ProjectsManagerView({ tasks, onOpenProject, onEditProject, onDel
               </div>
               <div className="shrink-0 flex items-center gap-2">
                 <button onClick={() => onOpenProject(sel.id)} title="Abrir board" className="flex items-center gap-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg px-3 py-2 transition-colors"><ExternalLink size={15} /> Abrir</button>
+                <button onClick={handleExportPdf} title="Exportar documentação em PDF" className="flex items-center gap-1.5 text-sm font-medium text-zinc-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg px-3 py-2 transition-colors"><FileDown size={15} /> PDF</button>
                 <button onClick={() => onEditProject(sel.id)} title="Editar" className="p-2 rounded-lg text-zinc-300 hover:text-white bg-white/5 hover:bg-white/10 transition-colors"><Settings2 size={15} /></button>
                 <button onClick={() => onDeleteProject(sel.id, sel.name)} title="Excluir" className="p-2 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"><Trash2 size={15} /></button>
               </div>

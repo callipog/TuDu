@@ -23,7 +23,8 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Projetos** com épicos, descrição, responsáveis, datas e **colunas de board customizáveis** por projeto.
 - **Reordenação por arrasto**: épicos e etapas do board se reorganizam pelo punho (⋮⋮), com os itens deslizando para a nova posição. As etapas também podem ser arrastadas direto no cabeçalho das colunas do Kanban.
 - **Board com muitas etapas**: rolagem horizontal com barra visível, setas nas bordas, roda do mouse na horizontal e rolagem automática ao arrastar um card até a borda.
-- **Tela de gerenciamento** de projetos (lista + detalhe) com **README em Markdown** (importe um `.md`) e arquivos anexos.
+- **Tela de gerenciamento** de projetos (lista + detalhe) com **README em Markdown** (importe um `.md`) e arquivos anexos. A lista tem **frame redimensionável** (arraste o divisor) e **arraste horizontal** para ler nomes longos.
+- **Exportar em PDF**: gera uma documentação completa do projeto (dados, progresso, épicos, **Gantt/cronograma**, README e tarefas) via "Salvar como PDF".
 - **Visão Gantt** por projeto: tabela (ID, atividade, início, término, situação, criticidade) + timeline com mês, **número da semana**, dia e dia-da-semana.
 - **Personas** (nome, cargo, cor) atribuíveis às tarefas, com **avatar** nos cards.
 - **Visão Equipe**: carga de trabalho e desempenho por pessoa.
