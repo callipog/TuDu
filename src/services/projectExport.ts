@@ -98,8 +98,11 @@ function markdownToHtml(md: string): string {
    número de dias. Cabeçalho de meses = o "calendário"; barras coloridas por
    status, como no app. Só entram tarefas com data. */
 
+/* Cores das barras por status. Backlog usa um índigo-ardósia visível (não mais
+   cinza, que some no papel branco); as demais são tons saturados que imprimem
+   bem. */
 const STATUS_HEX: Record<string, string> = {
-  backlog: '#a1a1aa', todo: '#3b82f6', in_progress: '#f59e0b', review: '#a855f7', done: '#10b981',
+  backlog: '#6366f1', todo: '#3b82f6', in_progress: '#f59e0b', review: '#a855f7', done: '#22c55e',
 };
 
 function statusHex(t: Task, columns: BoardColumn[]): string {
@@ -108,7 +111,7 @@ function statusHex(t: Task, columns: BoardColumn[]): string {
   const id = t.status || (t.completed ? doneId : firstId);
   if (STATUS_HEX[id]) return STATUS_HEX[id];
   if (id === doneId) return STATUS_HEX.done;
-  return '#6366f1'; // coluna customizada: índigo
+  return '#0ea5e9'; // coluna customizada: ciano
 }
 
 const DAY = 86400000;
@@ -246,7 +249,10 @@ export function buildProjectHtml(data: ProjectExportData): string {
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
-  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #1f2328; font-size: 12px; line-height: 1.55; }
+  /* print-color-adjust: sem isto, o navegador NÃO imprime cores de fundo — as
+     barras do Gantt e a barra de progresso sairiam vazias no PDF. */
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #1f2328; font-size: 12px; line-height: 1.55; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .page { max-width: 760px; margin: 0 auto; padding: 32px 28px; }
   h1 { font-size: 24px; margin: 0 0 4px; color: #111; }
   h2 { font-size: 15px; margin: 22px 0 10px; padding-bottom: 5px; border-bottom: 2px solid #e2e4e8; color: #111; }
@@ -299,7 +305,11 @@ export function buildProjectHtml(data: ProjectExportData): string {
   .file-type { color: #8a929c; }
   .empty { color: #8a929c; font-style: italic; }
   footer { margin-top: 26px; padding-top: 10px; border-top: 1px solid #e2e4e8; color: #8a929c; font-size: 10px; }
-  @media print { .page { padding: 0; max-width: none; } @page { margin: 16mm 14mm; } }
+  @media print {
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    .page { padding: 0; max-width: none; }
+    @page { margin: 16mm 14mm; }
+  }
 </style></head>
 <body><div class="page">
   <h1>${esc(project.name)}<span class="status">${esc(statusBadge[project.status]?.label ?? project.status)}</span></h1>
