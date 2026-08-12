@@ -1193,6 +1193,7 @@ export default function App() {
                           tags={task.tags}
                           time={task.dueDate}
                           completed={task.completed}
+                          completedAt={task.completedAt}
                           notificationsEnabled={task.notificationsEnabled}
                           recurrence={task.recurrence}
                           subtasks={task.subtasks}

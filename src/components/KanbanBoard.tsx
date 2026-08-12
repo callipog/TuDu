@@ -211,6 +211,7 @@ export function KanbanBoard({ tasks, onToggleTask, onToggleSubtask, onClickTask,
                     tags={task.tags}
                     time={task.dueDate}
                     completed={task.completed}
+                    completedAt={task.completedAt}
                     notificationsEnabled={task.notificationsEnabled}
                     recurrence={task.recurrence}
                     subtasks={task.subtasks}

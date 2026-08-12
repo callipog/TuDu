@@ -137,6 +137,9 @@ export const taskService = {
       id: crypto.randomUUID(),
       dueDate: nextDue,
       completed: false,
+      // A ocorrência nova nasce em aberto: herdar o completedAt da anterior
+      // faria ela aparecer como "finalizada em ..." sem nunca ter sido.
+      completedAt: undefined,
       status: 'todo',
       createdAt: new Date().toISOString(),
       order: -Date.now(),

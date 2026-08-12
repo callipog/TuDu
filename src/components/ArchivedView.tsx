@@ -195,11 +195,12 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
       ) : (
         <div className="rounded-2xl border border-white/10 overflow-hidden flex flex-col flex-1 min-h-0">
           {/* Cabeçalho da lista */}
-          <div className="hidden md:grid grid-cols-[28px_1fr_120px_110px_120px_110px] gap-4 px-5 py-3 bg-white/[0.03] border-b border-white/10 text-[10px] uppercase font-bold tracking-wider text-zinc-500 shrink-0 items-center">
+          <div className="hidden md:grid grid-cols-[28px_1fr_110px_100px_110px_110px_105px] gap-4 px-5 py-3 bg-white/[0.03] border-b border-white/10 text-[10px] uppercase font-bold tracking-wider text-zinc-500 shrink-0 items-center">
             <Box checked={allVisibleSelected} onClick={toggleAll} title="Selecionar todos" />
             <span>Tarefa</span>
             <span>Criticidade</span>
             <span>Entrega</span>
+            <span>Finalizada em</span>
             <span>Arquivada em</span>
             <span>Ações</span>
           </div>
@@ -211,7 +212,7 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
                 <div
                   key={task.id}
                   onClick={() => onClickTask(task)}
-                  className={`grid grid-cols-1 md:grid-cols-[28px_1fr_120px_110px_120px_110px] gap-2 md:gap-4 px-5 py-4 items-center transition-colors cursor-pointer ${isSel ? 'bg-indigo-500/[0.06]' : 'hover:bg-white/[0.03]'}`}
+                  className={`grid grid-cols-1 md:grid-cols-[28px_1fr_110px_100px_110px_110px_105px] gap-2 md:gap-4 px-5 py-4 items-center transition-colors cursor-pointer ${isSel ? 'bg-indigo-500/[0.06]' : 'hover:bg-white/[0.03]'}`}
                 >
                   {/* Checkbox */}
                   <Box checked={isSel} onClick={(e) => { e.stopPropagation(); toggleOne(task.id); }} title="Selecionar" />
@@ -240,6 +241,12 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
                   {/* Entrega */}
                   <div className="text-xs text-zinc-400">
                     {task.dueDate ? format(parseISO(task.dueDate), 'dd/MM/yy HH:mm') : <span className="text-zinc-600">—</span>}
+                  </div>
+                  {/* Finalizada em */}
+                  <div className="text-xs">
+                    {task.completedAt
+                      ? <span className="text-emerald-400">{format(parseISO(task.completedAt), 'dd/MM/yy HH:mm', { locale: ptBR })}</span>
+                      : <span className="text-zinc-600">—</span>}
                   </div>
                   {/* Arquivada em */}
                   <div className="text-xs text-zinc-400">

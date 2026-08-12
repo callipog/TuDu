@@ -116,6 +116,13 @@ export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, proje
           <Field label="Criada em">
             {task.createdAt ? format(parseISO(task.createdAt), "dd/MM/yyyy", { locale: ptBR }) : '—'}
           </Field>
+          {task.completed && (
+            <Field label="Finalizada em">
+              {task.completedAt
+                ? <span className="flex items-center gap-1.5 text-emerald-400"><Check size={14} />{format(parseISO(task.completedAt), "dd 'de' MMM yyyy · HH:mm", { locale: ptBR })}</span>
+                : <span className="text-zinc-500">—</span>}
+            </Field>
+          )}
           {project && (
             <Field label="Projeto">
               <span className="flex items-center gap-2">

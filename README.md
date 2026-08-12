@@ -16,6 +16,7 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Níveis de criticidade** (Baixa, Média, Alta, Crítica) com indicadores de cor.
 - **Anexos**: links, trechos de código, imagens e **arquivos** (pdf, etc.).
 - **Subtarefas / checklist** com barra de progresso.
+- **Carimbo de conclusão**: ao marcar como finalizada, a tarefa guarda a data e a hora — visíveis no card e nos detalhes.
 - **Tarefas recorrentes**: diária, semanal, mensal, **a cada N dias** ou **dias específicos da semana**, com término opcional (nunca / após N ocorrências / em uma data).
 - **Arquivamento** e **Lixeira** (recuperável; expurgo automático após 30 dias).
 
@@ -45,7 +46,7 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Agenda**: grade semanal ou diária com horários na lateral (estilo Teams/Meet) — clique num bloco para editar ou num espaço vazio para criar.
 - **Lista**: todas as tarefas com seus dados, **ordenação por coluna** (título, status, criticidade, prazo) e **filtros salvos**.
 - **Relatórios**: KPIs e gráficos (concluídas por semana, pendentes por criticidade, tarefas por tag).
-- **Arquivados**: histórico das tarefas arquivadas, com seleção em massa e filtros por criticidade, tag, **mês e ano** de arquivamento.
+- **Arquivados**: histórico das tarefas arquivadas, com colunas de **finalização** e arquivamento, seleção em massa e filtros por criticidade, tag, **mês e ano** de arquivamento.
 - **Filtros** por texto, tag e criticidade; contador de tarefas **atrasadas** na barra lateral.
 
 ### Produtividade

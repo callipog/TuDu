@@ -5,7 +5,7 @@ import { format, parseISO, isPast } from 'date-fns';
 import { tagService } from '../services/tags';
 import { Avatar } from './Avatar';
 
-export function TaskItem({ title, description, urgency, tags, completed, time, notificationsEnabled, recurrence, subtasks, assignee, epic, projectId, onToggle, onToggleNotifications, onToggleSubtask, onEdit, onClick, onContextMenu }: { key?: React.Key; title: string; description?: string; urgency: Task['urgency']; tags: string[]; completed?: boolean; time?: string; notificationsEnabled?: boolean; recurrence?: Task['recurrence']; subtasks?: SubTask[]; assignee?: Persona; epic?: Epic; projectId?: string; onToggle?: () => void; onToggleNotifications?: () => void; onToggleSubtask?: (subtaskId: string) => void; onEdit?: () => void; onClick?: () => void; onContextMenu?: (e: React.MouseEvent) => void }) {
+export function TaskItem({ title, description, urgency, tags, completed, completedAt, time, notificationsEnabled, recurrence, subtasks, assignee, epic, projectId, onToggle, onToggleNotifications, onToggleSubtask, onEdit, onClick, onContextMenu }: { key?: React.Key; title: string; description?: string; urgency: Task['urgency']; tags: string[]; completed?: boolean; /** Quando a tarefa foi marcada como finalizada (ISO). */ completedAt?: string; time?: string; notificationsEnabled?: boolean; recurrence?: Task['recurrence']; subtasks?: SubTask[]; assignee?: Persona; epic?: Epic; projectId?: string; onToggle?: () => void; onToggleNotifications?: () => void; onToggleSubtask?: (subtaskId: string) => void; onEdit?: () => void; onClick?: () => void; onContextMenu?: (e: React.MouseEvent) => void }) {
   const [showSubtasks, setShowSubtasks] = useState(false);
   // Altura medida do checklist: o conteúdo fica sempre montado, então
   // scrollHeight já entrega o valor exato mesmo com o painel fechado.
@@ -46,6 +46,7 @@ export function TaskItem({ title, description, urgency, tags, completed, time, n
   const formattedDue = dueDate ? format(dueDate, 'dd/MM · HH:mm') : undefined;
   const isOverdue = dueDate ? isPast(dueDate) && !completed : false;
   const isRecurring = recurrence && recurrence !== 'none';
+  const doneAt = completed && completedAt ? parseISO(completedAt) : undefined;
   const subtaskTotal = subtasks?.length ?? 0;
   const subtaskDone = subtasks?.filter(s => s.done).length ?? 0;
 
@@ -123,6 +124,15 @@ export function TaskItem({ title, description, urgency, tags, completed, time, n
         <div className="flex items-center gap-1.5 flex-wrap justify-end min-w-0 ml-auto">
           {assignee && <Avatar persona={assignee} size={22} />}
           {isRecurring && <Repeat size={12} className="text-zinc-500 shrink-0" aria-label="Tarefa recorrente" />}
+          {doneAt && (
+            <span
+              title={`Finalizada em ${format(doneAt, "dd/MM/yyyy 'às' HH:mm")}`}
+              className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 rounded-md whitespace-nowrap"
+            >
+              <Check size={10} strokeWidth={3} />
+              {format(doneAt, 'dd/MM · HH:mm')}
+            </span>
+          )}
           {formattedDue && (
             <span className={`text-xs font-mono whitespace-nowrap ${isOverdue ? 'text-rose-500 font-bold' : 'text-zinc-400'}`}>
               {formattedDue}
