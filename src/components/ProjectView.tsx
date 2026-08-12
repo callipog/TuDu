@@ -139,7 +139,7 @@ export function ProjectView({ project, epics, tasks, onEditProject, statusLabel,
             onReorderColumns={(cols) => projectService.update(project.id, { columns: cols })}
           />
         ) : (
-          <GanttView tasks={boardTasks} statusLabel={statusLabel} statusColor={statusColor} onSelect={board.onClickTask} />
+          <GanttView tasks={boardTasks} epics={epics} statusLabel={statusLabel} statusColor={statusColor} onSelect={board.onClickTask} />
         )}
       </div>
     </div>

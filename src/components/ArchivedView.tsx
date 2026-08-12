@@ -19,6 +19,12 @@ const urgencyMeta: Record<Urgency, { label: string; dot: string; text: string }>
   critical: { label: 'Crítica', dot: 'bg-rose-500', text: 'text-rose-400' },
 };
 
+/** Nomes dos meses em pt-BR (índice = getMonth()). */
+const MONTHS = Array.from({ length: 12 }, (_, i) => {
+  const nome = format(new Date(2000, i, 1), 'MMMM', { locale: ptBR });
+  return nome.charAt(0).toUpperCase() + nome.slice(1);
+});
+
 function Box({ checked, onClick, title }: { checked: boolean; onClick: (e: React.MouseEvent) => void; title?: string }) {
   return (
     <button
@@ -35,12 +41,21 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
   const [search, setSearch] = useState('');
   const [urgencyFilter, setUrgencyFilter] = useState<Urgency | 'all'>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
+  const [monthFilter, setMonthFilter] = useState<string>('all'); // '0'..'11'
+  const [yearFilter, setYearFilter] = useState<string>('all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
     tasks.forEach(t => t.tags.forEach(tag => set.add(tag)));
     return [...set].sort();
+  }, [tasks]);
+
+  // Anos presentes no arquivo (mais recentes primeiro).
+  const allYears = useMemo(() => {
+    const set = new Set<number>();
+    tasks.forEach(t => { if (t.archivedAt) set.add(parseISO(t.archivedAt).getFullYear()); });
+    return [...set].sort((a, b) => b - a);
   }, [tasks]);
 
   const filtered = useMemo(() => {
@@ -52,10 +67,16 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
         }
         if (urgencyFilter !== 'all' && t.urgency !== urgencyFilter) return false;
         if (tagFilter !== 'all' && !t.tags.includes(tagFilter)) return false;
+        if (monthFilter !== 'all' || yearFilter !== 'all') {
+          if (!t.archivedAt) return false; // sem data de arquivamento não entra no recorte
+          const d = parseISO(t.archivedAt);
+          if (monthFilter !== 'all' && d.getMonth() !== Number(monthFilter)) return false;
+          if (yearFilter !== 'all' && d.getFullYear() !== Number(yearFilter)) return false;
+        }
         return true;
       })
       .sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
-  }, [tasks, search, urgencyFilter, tagFilter]);
+  }, [tasks, search, urgencyFilter, tagFilter, monthFilter, yearFilter]);
 
   // Remove da seleção ids que não existem mais.
   useEffect(() => {
@@ -122,6 +143,27 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
             <option key={tag} value={tag}>{tag}</option>
           ))}
         </select>
+        {/* Recorte por data de arquivamento */}
+        <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className={selectClass} title="Mês em que foi arquivada">
+          <option value="all">Todos os meses</option>
+          {MONTHS.map((label, i) => (
+            <option key={label} value={String(i)}>{label}</option>
+          ))}
+        </select>
+        <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className={selectClass} title="Ano em que foi arquivada">
+          <option value="all">Todos os anos</option>
+          {allYears.map(y => (
+            <option key={y} value={String(y)}>{y}</option>
+          ))}
+        </select>
+        {(monthFilter !== 'all' || yearFilter !== 'all') && (
+          <button
+            onClick={() => { setMonthFilter('all'); setYearFilter('all'); }}
+            className="text-xs text-zinc-400 hover:text-white transition-colors"
+          >
+            Limpar datas
+          </button>
+        )}
         <span className="text-xs text-zinc-500 ml-auto">{filtered.length} de {tasks.length}</span>
       </div>
 

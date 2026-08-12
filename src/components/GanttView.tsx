@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
-import { Task } from '../types';
+import { Task, Epic } from '../types';
 import { StatusColor } from '../services/boards';
+import { tagService } from '../services/tags';
 import {
   parseISO, startOfDay, addDays, eachDayOfInterval, differenceInCalendarDays,
   format, isToday, getISOWeek
@@ -9,6 +10,8 @@ import { ptBR } from 'date-fns/locale';
 
 interface GanttViewProps {
   tasks: Task[];
+  /** Épicos do projeto (já ordenados). Quando há épicos, a tabela é agrupada. */
+  epics?: Epic[];
   statusLabel: (task: Task) => string;
   statusColor: (task: Task) => StatusColor;
   onSelect: (task: Task) => void;
@@ -16,6 +19,7 @@ interface GanttViewProps {
 
 const DAY_W = 34;
 const ROW_H = 44;
+const GROUP_H = 38; // linha de cabeçalho do épico
 const HEADER_H = 88; // 4 linhas: mês / semana / dia / dia-da-semana
 const GRID = '44px 210px 92px 92px 116px 96px';
 const LEFT_W = 44 + 210 + 92 + 92 + 116 + 96;
@@ -27,12 +31,46 @@ const urgencyLabel: Record<Task['urgency'], string> = {
   low: 'Baixa', medium: 'Média', high: 'Alta', critical: 'Crítica',
 };
 
-export function GanttView({ tasks, statusLabel, statusColor, onSelect }: GanttViewProps) {
-  const rows = useMemo(() => tasks.slice().sort((a, b) => {
-    const as = a.startDate || a.dueDate || '';
-    const bs = b.startDate || b.dueDate || '';
-    return as.localeCompare(bs);
-  }), [tasks]);
+/** Linha da tabela: cabeçalho de épico ou tarefa. */
+type GanttRow =
+  | { kind: 'group'; id: string; name: string; color: string; itens: Task[]; temas: string[] }
+  | { kind: 'task'; id: string; task: Task; n: number };
+
+export function GanttView({ tasks, epics, statusLabel, statusColor, onSelect }: GanttViewProps) {
+  // Sem épicos, a tabela é uma lista simples (como antes). Com épicos, as
+  // tarefas ficam sob um cabeçalho com o nome do épico e seus temas (tags).
+  const rows = useMemo<GanttRow[]>(() => {
+    const byDate = (a: Task, b: Task) =>
+      (a.startDate || a.dueDate || '').localeCompare(b.startDate || b.dueDate || '');
+    const sorted = tasks.slice().sort(byDate);
+    const list = epics ?? [];
+    const agrupar = list.length > 0 && sorted.some(t => t.epicId && list.some(e => e.id === t.epicId));
+    if (!agrupar) return sorted.map((task, i) => ({ kind: 'task', id: task.id, task, n: i + 1 }));
+
+    const baldes = [
+      ...list.map(e => ({
+        id: e.id,
+        name: e.name,
+        color: e.color || 'bg-zinc-500',
+        itens: sorted.filter(t => t.epicId === e.id),
+      })),
+      {
+        id: '__sem_epico__',
+        name: 'Sem épico',
+        color: 'bg-zinc-600',
+        itens: sorted.filter(t => !t.epicId || !list.some(e => e.id === t.epicId)),
+      },
+    ].filter(b => b.itens.length > 0);
+
+    const out: GanttRow[] = [];
+    let n = 0;
+    baldes.forEach(b => {
+      const temas = [...new Set(b.itens.flatMap(t => t.tags))].sort();
+      out.push({ kind: 'group', id: b.id, name: b.name, color: b.color, itens: b.itens, temas });
+      b.itens.forEach(task => out.push({ kind: 'task', id: task.id, task, n: ++n }));
+    });
+    return out;
+  }, [tasks, epics]);
 
   const { days, rangeStart } = useMemo(() => {
     const ds: Date[] = [];
@@ -72,19 +110,35 @@ export function GanttView({ tasks, statusLabel, statusColor, onSelect }: GanttVi
     return segs;
   }, [days]);
 
-  const barFor = (t: Task) => {
+  const spanOf = (t: Task): [Date, Date] | null => {
     const s = t.startDate ? startOfDay(parseISO(t.startDate)) : (t.dueDate ? startOfDay(parseISO(t.dueDate)) : null);
     const e = t.dueDate ? startOfDay(parseISO(t.dueDate)) : (t.startDate ? startOfDay(parseISO(t.startDate)) : null);
-    if (!s || !e) return null;
-    const left = differenceInCalendarDays(s, rangeStart) * DAY_W;
-    const width = Math.max(1, differenceInCalendarDays(e, s) + 1) * DAY_W;
-    return { left, width };
+    return s && e ? [s, e] : null;
+  };
+
+  const bar = (s: Date, e: Date) => ({
+    left: differenceInCalendarDays(s, rangeStart) * DAY_W,
+    width: Math.max(1, differenceInCalendarDays(e, s) + 1) * DAY_W,
+  });
+
+  const barFor = (t: Task) => {
+    const span = spanOf(t);
+    return span ? bar(span[0], span[1]) : null;
+  };
+
+  // Barra "guarda-chuva" do épico: do início mais cedo ao término mais tarde.
+  const barForGroup = (itens: Task[]) => {
+    const spans = itens.map(spanOf).filter(Boolean) as [Date, Date][];
+    if (spans.length === 0) return null;
+    const s = new Date(Math.min(...spans.map(([a]) => a.getTime())));
+    const e = new Date(Math.max(...spans.map(([, b]) => b.getTime())));
+    return bar(s, e);
   };
 
   const timelineWidth = days.length * DAY_W;
   const cellHead = 'flex items-center px-2 text-[10px] uppercase font-bold tracking-wider text-zinc-500';
 
-  if (rows.length === 0) {
+  if (tasks.length === 0) {
     return <p className="text-sm text-zinc-500 italic py-10 text-center">Nenhuma tarefa neste projeto para exibir no Gantt.</p>;
   }
 
@@ -101,26 +155,59 @@ export function GanttView({ tasks, statusLabel, statusColor, onSelect }: GanttVi
             <span className={cellHead}>Situação</span>
             <span className={cellHead}>Criticidade</span>
           </div>
-          {rows.map((t, i) => (
-            <div
-              key={t.id}
-              onClick={() => onSelect(t)}
-              className="grid items-center border-b border-white/5 hover:bg-white/[0.03] cursor-pointer"
-              style={{ gridTemplateColumns: GRID, height: ROW_H }}
-            >
-              <span className="px-2 text-[11px] font-mono text-zinc-600">{i + 1}</span>
-              <span className={`px-2 text-sm truncate ${t.completed ? 'line-through text-zinc-500' : 'text-white'}`}>{t.title}</span>
-              <span className="px-2 text-xs text-zinc-400">{t.startDate ? format(parseISO(t.startDate), 'dd/MM/yy') : '—'}</span>
-              <span className="px-2 text-xs text-zinc-400">{t.dueDate ? format(parseISO(t.dueDate), 'dd/MM/yy') : '—'}</span>
-              <span className="px-2 flex items-center gap-1.5 text-xs text-zinc-400 truncate">
-                <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor(t).dot}`}></span>
-                <span className="truncate">{statusLabel(t)}</span>
-              </span>
-              <span className="px-2 flex items-center gap-1.5 text-xs text-zinc-400">
-                <span className={`w-2 h-2 rounded-full ${urgencyDot[t.urgency]}`}></span>{urgencyLabel[t.urgency]}
-              </span>
-            </div>
-          ))}
+          {rows.map(row => {
+            if (row.kind === 'group') {
+              const done = row.itens.filter(t => t.completed).length;
+              return (
+                <div
+                  key={`g-${row.id}`}
+                  className="flex items-center gap-2 px-3 bg-white/[0.05] border-b border-white/10"
+                  style={{ height: GROUP_H }}
+                >
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${row.color}`}></span>
+                  <span className="text-xs font-bold text-white truncate max-w-[190px]" title={row.name}>{row.name}</span>
+                  <span className="text-[10px] font-semibold text-zinc-400 bg-white/10 px-1.5 py-0.5 rounded-full shrink-0">
+                    {done}/{row.itens.length}
+                  </span>
+                  {row.temas.length > 0 && (
+                    <div className="flex items-center gap-1 overflow-hidden" title={`Temas: ${row.temas.join(', ')}`}>
+                      {row.temas.slice(0, 4).map(tema => (
+                        <span key={tema} className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-zinc-300 bg-white/5 border border-white/10 rounded whitespace-nowrap">
+                          <span className={`w-1.5 h-1.5 rounded-full ${tagService.getTagColor(tema)}`}></span>
+                          {tema}
+                        </span>
+                      ))}
+                      {row.temas.length > 4 && (
+                        <span className="text-[10px] text-zinc-500 shrink-0">+{row.temas.length - 4}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            const t = row.task;
+            return (
+              <div
+                key={t.id}
+                onClick={() => onSelect(t)}
+                className="grid items-center border-b border-white/5 hover:bg-white/[0.03] cursor-pointer"
+                style={{ gridTemplateColumns: GRID, height: ROW_H }}
+              >
+                <span className="px-2 text-[11px] font-mono text-zinc-600">{row.n}</span>
+                <span className={`px-2 text-sm truncate ${t.completed ? 'line-through text-zinc-500' : 'text-white'}`}>{t.title}</span>
+                <span className="px-2 text-xs text-zinc-400">{t.startDate ? format(parseISO(t.startDate), 'dd/MM/yy') : '—'}</span>
+                <span className="px-2 text-xs text-zinc-400">{t.dueDate ? format(parseISO(t.dueDate), 'dd/MM/yy') : '—'}</span>
+                <span className="px-2 flex items-center gap-1.5 text-xs text-zinc-400 truncate">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor(t).dot}`}></span>
+                  <span className="truncate">{statusLabel(t)}</span>
+                </span>
+                <span className="px-2 flex items-center gap-1.5 text-xs text-zinc-400">
+                  <span className={`w-2 h-2 rounded-full ${urgencyDot[t.urgency]}`}></span>{urgencyLabel[t.urgency]}
+                </span>
+              </div>
+            );
+          })}
         </div>
 
         {/* Timeline (direita) */}
@@ -162,23 +249,42 @@ export function GanttView({ tasks, statusLabel, statusColor, onSelect }: GanttVi
           </div>
 
           {/* Linhas com barras */}
-          {rows.map(t => {
-            const bar = barFor(t);
+          {rows.map(row => {
+            const grid = `repeating-linear-gradient(to right, transparent, transparent ${DAY_W - 1}px, rgba(255,255,255,0.05) ${DAY_W - 1}px, rgba(255,255,255,0.05) ${DAY_W}px)`;
+
+            if (row.kind === 'group') {
+              const g = barForGroup(row.itens);
+              return (
+                <div
+                  key={`g-${row.id}`}
+                  className="relative bg-white/[0.05] border-b border-white/10"
+                  style={{ height: GROUP_H, backgroundImage: grid }}
+                >
+                  {g && (
+                    <div
+                      title={`${row.name} · ${row.itens.length} tarefa(s)`}
+                      className={`absolute top-1/2 -translate-y-1/2 h-2.5 rounded-full opacity-70 ${row.color}`}
+                      style={{ left: g.left + 2, width: g.width - 4 }}
+                    />
+                  )}
+                </div>
+              );
+            }
+
+            const t = row.task;
+            const b = barFor(t);
             return (
               <div
                 key={t.id}
                 onClick={() => onSelect(t)}
                 className="relative border-b border-white/5 cursor-pointer hover:bg-white/[0.02]"
-                style={{
-                  height: ROW_H,
-                  backgroundImage: `repeating-linear-gradient(to right, transparent, transparent ${DAY_W - 1}px, rgba(255,255,255,0.05) ${DAY_W - 1}px, rgba(255,255,255,0.05) ${DAY_W}px)`,
-                }}
+                style={{ height: ROW_H, backgroundImage: grid }}
               >
-                {bar && (
+                {b && (
                   <div
                     title={`${t.title} · ${statusLabel(t)}`}
                     className={`absolute top-1/2 -translate-y-1/2 h-6 rounded-md flex items-center px-2 overflow-hidden shadow-sm ${statusColor(t).bar} ${t.completed ? 'opacity-50' : ''}`}
-                    style={{ left: bar.left + 2, width: bar.width - 4 }}
+                    style={{ left: b.left + 2, width: b.width - 4 }}
                   >
                     <span className="text-[10px] font-medium text-white truncate">{t.title}</span>
                   </div>

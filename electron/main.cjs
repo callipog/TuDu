@@ -53,7 +53,12 @@ let mainWindow = null;
 let splash = null;
 let tray = null;
 let splashStart = 0;
+let splashWatchdog = null;
+let revealed = false;
 const MIN_SPLASH_MS = 1100;
+// Rede de segurança: se a janela principal não avisar que está pronta (já
+// aconteceu logo depois de uma atualização), o splash cai sozinho.
+const MAX_SPLASH_MS = 12000;
 app.isQuitting = false;
 
 function createSplash() {
@@ -91,6 +96,10 @@ function createSplash() {
 }
 
 function closeSplash() {
+  if (splashWatchdog) {
+    clearTimeout(splashWatchdog);
+    splashWatchdog = null;
+  }
   if (splash && !splash.isDestroyed()) {
     splash.destroy();
   }
@@ -98,6 +107,7 @@ function closeSplash() {
 }
 
 function createWindow(startHidden) {
+  revealed = false;
   mainWindow = new BrowserWindow({
     width: 1500,
     height: 780,
@@ -128,15 +138,29 @@ function createWindow(startHidden) {
   mainWindow.maximize();
   mainWindow.setMenu(null);
 
-  mainWindow.once('ready-to-show', () => {
+  // Fecha o splash e mostra a janela. Idempotente: pode ser chamado por
+  // qualquer um dos gatilhos abaixo, vale o primeiro.
+  const reveal = () => {
+    if (revealed) return;
+    revealed = true;
     // Garante um tempo mínimo de splash para não "piscar".
     const elapsed = Date.now() - splashStart;
     const wait = Math.max(0, MIN_SPLASH_MS - elapsed);
     setTimeout(() => {
       closeSplash();
-      if (!startHidden) mainWindow.show();
+      if (!startHidden && mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
     }, wait);
-  });
+  };
+
+  // Janela visível => splash nunca deve sobrar por cima dela.
+  mainWindow.on('show', closeSplash);
+  mainWindow.once('ready-to-show', reveal);
+  // 'ready-to-show' pode não chegar (visto após atualizar o app): o splash
+  // ficava eternamente carregando por cima. Estes gatilhos garantem a saída.
+  mainWindow.webContents.once('did-finish-load', reveal);
+  mainWindow.webContents.on('did-fail-load', reveal);
+  mainWindow.webContents.on('render-process-gone', reveal);
+  if (splash) splashWatchdog = setTimeout(reveal, MAX_SPLASH_MS);
 
   // Fechar a janela: esconde na bandeja se "Fechar para a bandeja" estiver ativo;
   // caso contrário, encerra o app por completo.
@@ -160,6 +184,9 @@ function showWindow() {
     createWindow(false);
     return;
   }
+  // Pediram a janela explicitamente: o splash não tem mais o que fazer.
+  revealed = true;
+  closeSplash();
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -237,13 +264,17 @@ function createTray() {
 }
 
 // Garante uma única instância do app; abrir de novo apenas foca a janela.
-if (!app.requestSingleInstanceLock()) {
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
   app.isQuitting = true;
   app.quit();
 }
 app.on('second-instance', () => showWindow());
 
 app.whenReady().then(() => {
+  // Instância perdedora do lock (acontece na reabertura logo após atualizar):
+  // não pode criar splash/janela, senão sobra um splash órfão na tela.
+  if (!gotTheLock) return;
   Menu.setApplicationMenu(null);
 
   const settings = readSettings();

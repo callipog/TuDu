@@ -25,7 +25,7 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Board com muitas etapas**: rolagem horizontal com barra visível, setas nas bordas, roda do mouse na horizontal e rolagem automática ao arrastar um card até a borda.
 - **Tela de gerenciamento** de projetos (lista + detalhe) com **README em Markdown** (importe um `.md`) e arquivos anexos. A lista tem **frame redimensionável** (arraste o divisor) e **arraste horizontal** para ler nomes longos.
 - **Exportar em PDF**: gera uma documentação completa do projeto (dados, progresso, épicos, **Gantt/cronograma**, README e tarefas) via "Salvar como PDF".
-- **Visão Gantt** por projeto: tabela (ID, atividade, início, término, situação, criticidade) + timeline com mês, **número da semana**, dia e dia-da-semana.
+- **Visão Gantt** por projeto: tabela (ID, atividade, início, término, situação, criticidade) + timeline com mês, **número da semana**, dia e dia-da-semana. As tarefas ficam sob um **cabeçalho do épico** (progresso e os **temas/tags** daquele épico), com barra guarda-chuva do início ao término do épico na timeline.
 - **Personas** (nome, cargo, cor) atribuíveis às tarefas, com **avatar** nos cards.
 - **Visão Equipe**: carga de trabalho e desempenho por pessoa.
 
@@ -39,13 +39,13 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Popups nativos do Windows**: um lembrete antecipado (antecedência configurável por tarefa — de 10 min a 1 dia) e outro na hora exata do prazo.
 
 ### Visualizações
-- **Caixa de Entrada**: quadro principal de tarefas.
+- **Caixa de Entrada**: quadro principal de tarefas, com botão para **mostrar ou ocultar as tarefas de projetos** (a escolha fica salva).
 - **Hoje**: tarefas com prazo para o dia atual.
 - **Calendário**: grade mensal com painel do dia selecionado (estilo Google/Notion).
 - **Agenda**: grade semanal ou diária com horários na lateral (estilo Teams/Meet) — clique num bloco para editar ou num espaço vazio para criar.
 - **Lista**: todas as tarefas com seus dados, **ordenação por coluna** (título, status, criticidade, prazo) e **filtros salvos**.
 - **Relatórios**: KPIs e gráficos (concluídas por semana, pendentes por criticidade, tarefas por tag).
-- **Arquivados**: histórico das tarefas arquivadas, com seleção em massa.
+- **Arquivados**: histórico das tarefas arquivadas, com seleção em massa e filtros por criticidade, tag, **mês e ano** de arquivamento.
 - **Filtros** por texto, tag e criticidade; contador de tarefas **atrasadas** na barra lateral.
 
 ### Produtividade

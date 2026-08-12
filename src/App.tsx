@@ -49,6 +49,8 @@ import { ManageTagsModal } from './components/ManageTagsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { TitleBar } from './components/TitleBar';
 
+const BOARD_PROJECT_TASKS_KEY = 'tudu_board_project_tasks';
+
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState('inbox');
@@ -108,6 +110,15 @@ export default function App() {
   const epicById = (id?: string) => id ? epics.find(e => e.id === id) : undefined;
   const projectById = (id?: string) => id ? projects.find(p => p.id === id) : undefined;
   const activeProjects = projects.filter(p => !p.archived);
+
+  // Board principal: mostrar (ou não) as tarefas que pertencem a projetos.
+  const [showProjectTasks, setShowProjectTasks] = useState<boolean>(() => {
+    try { return localStorage.getItem(BOARD_PROJECT_TASKS_KEY) !== '0'; } catch { return true; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(BOARD_PROJECT_TASKS_KEY, showProjectTasks ? '1' : '0'); } catch { /* ignore */ }
+  }, [showProjectTasks]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateFilter, setSelectedDateFilter] = useState<Date | null>(null);
@@ -678,6 +689,9 @@ export default function App() {
   const filteredTasks = activeTasks.filter(task => {
     if (!matchesCommonFilters(task)) return false;
 
+    // Board principal: tarefas de projeto podem ser escondidas pelo botão do topo.
+    if (!showProjectTasks && task.projectId) return false;
+
     if (activeTab === 'today') {
       // Deadline hoje OU sem deadline (sempre visível).
       return !task.dueDate || isToday(parseISO(task.dueDate));
@@ -699,6 +713,9 @@ export default function App() {
   const calendarDayTasks = activeTasks.filter(task =>
     matchesCommonFilters(task) && task.dueDate && isSameDay(parseISO(task.dueDate), selectedDate)
   );
+
+  // Quantas tarefas ativas vêm de projetos (rótulo do botão do board).
+  const projectTaskCount = activeTasks.filter(t => !!t.projectId).length;
 
   // Contador de tarefas atrasadas (prazo já passou e não concluídas).
   const overdueCount = activeTasks.filter(t => !t.completed && t.dueDate && isPast(parseISO(t.dueDate))).length;
@@ -876,6 +893,23 @@ export default function App() {
             </h2>
           </div>
           <div className="flex items-center gap-4">
+            {['inbox', 'today', 'all'].includes(activeTab) && (
+              <button
+                onClick={() => setShowProjectTasks(v => !v)}
+                title={showProjectTasks ? 'Ocultar as tarefas vinculadas a projetos' : 'Mostrar as tarefas vinculadas a projetos'}
+                className={`flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-lg border transition-colors ${
+                  showProjectTasks
+                    ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25'
+                    : 'bg-white/5 border-white/10 text-zinc-500 hover:text-zinc-300 hover:bg-white/10'
+                }`}
+              >
+                <FolderKanban size={14} />
+                <span className="hidden lg:inline">Tarefas de projetos</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${showProjectTasks ? 'bg-indigo-500/25' : 'bg-white/10'}`}>
+                  {projectTaskCount}
+                </span>
+              </button>
+            )}
             <div className="relative group">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-indigo-400 transition-colors" />
               <input
