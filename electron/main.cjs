@@ -1,6 +1,13 @@
-const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, shell, globalShortcut, dialog, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
+
+// Precisa ser declarado antes do app ficar pronto: é assim que o renderer
+// consegue exibir os anexos sem carregar o arquivo inteiro em memória.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'tudu-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+]);
 const bridge = require('./bridge.cjs');
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -49,9 +56,13 @@ function writeSettings(patch) {
   return next;
 }
 
+const DEFAULT_CAPTURE_SHORTCUT = 'Control+Shift+Space';
+
 let mainWindow = null;
 let splash = null;
 let tray = null;
+let captureWindow = null;
+let captureShortcut = null;
 let splashStart = 0;
 let splashWatchdog = null;
 let revealed = false;
@@ -179,6 +190,191 @@ function createWindow(startHidden) {
   }
 }
 
+/* ---- Anexos em disco -------------------------------------------------------
+   Antes os arquivos viravam base64 dentro do IndexedDB: uma imagem de 2 MB
+   custava ~2,7 MB no banco e era lida junto da tarefa em toda carga. Agora o
+   binário mora em userData/attachments e a tarefa guarda só o nome do arquivo,
+   servido pelo protocolo tudu-file:// (que só enxerga essa pasta). */
+
+function attachmentsDir() {
+  return path.join(app.getPath('userData'), 'attachments');
+}
+
+/** Nome seguro: sem separador de caminho, sem "..", com extensão simples. */
+function safeAttachmentName(name) {
+  return /^[A-Za-z0-9._-]{1,120}$/.test(name) && !name.includes('..') ? name : null;
+}
+
+/* ---- Backup em pasta -------------------------------------------------------
+   O banco vive no renderer (IndexedDB), então quem monta o JSON é ele; aqui só
+   gravamos em disco, com rotação. A pasta pode ser uma do OneDrive ou do Google
+   Drive — o próprio serviço de nuvem cuida de levar o arquivo embora. */
+
+const BACKUP_PREFIX = 'tudu-backup-';
+
+/** Pastas de nuvem que existem nesta máquina, para oferecer de atalho. */
+function detectCloudFolders() {
+  const home = app.getPath('home');
+  const candidatos = [
+    { id: 'onedrive', label: 'OneDrive', dir: process.env.OneDrive || process.env.OneDriveConsumer || path.join(home, 'OneDrive') },
+    { id: 'onedrive-business', label: 'OneDrive (empresa)', dir: process.env.OneDriveCommercial },
+    { id: 'gdrive', label: 'Google Drive', dir: path.join(home, 'Meu Drive') },
+    { id: 'gdrive-en', label: 'Google Drive', dir: path.join(home, 'My Drive') },
+    { id: 'gdrive-stream', label: 'Google Drive (G:)', dir: 'G:\\Meu Drive' },
+    { id: 'gdrive-stream-en', label: 'Google Drive (G:)', dir: 'G:\\My Drive' },
+  ];
+
+  const vistos = new Set();
+  const achados = [];
+  for (const c of candidatos) {
+    if (!c.dir || vistos.has(c.label)) continue;
+    try {
+      if (fs.existsSync(c.dir) && fs.statSync(c.dir).isDirectory()) {
+        vistos.add(c.label);
+        achados.push({ id: c.id, label: c.label, dir: path.join(c.dir, 'TuDu') });
+      }
+    } catch { /* pasta inacessível: ignora */ }
+  }
+  return achados;
+}
+
+function backupState() {
+  const s = readSettings();
+  const dir = s.backupDir || path.join(app.getPath('userData'), 'backups');
+  let last = null;
+  let count = 0;
+  try {
+    const arquivos = fs.readdirSync(dir).filter(f => f.startsWith(BACKUP_PREFIX) && f.endsWith('.json'));
+    count = arquivos.length;
+    if (count > 0) {
+      const mais = arquivos
+        .map(f => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs }))
+        .sort((a, b) => b.t - a.t)[0];
+      last = new Date(mais.t).toISOString();
+    }
+  } catch { /* pasta ainda não existe */ }
+
+  return {
+    enabled: s.autoBackupEnabled !== false, // padrão: ligado
+    dir,
+    keep: Number(s.backupKeep) > 0 ? Number(s.backupKeep) : 7,
+    lastAt: last,
+    count,
+    clouds: detectCloudFolders(),
+  };
+}
+
+/** Grava o JSON e apaga as cópias que passaram do limite. */
+function writeBackup(json) {
+  const state = backupState();
+  fs.mkdirSync(state.dir, { recursive: true });
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const file = path.join(state.dir, `${BACKUP_PREFIX}${stamp}.json`);
+  fs.writeFileSync(file, json, 'utf-8');
+
+  // Rotação: mantém apenas as N mais recentes.
+  try {
+    const antigos = fs.readdirSync(state.dir)
+      .filter(f => f.startsWith(BACKUP_PREFIX) && f.endsWith('.json'))
+      .map(f => ({ f, t: fs.statSync(path.join(state.dir, f)).mtimeMs }))
+      .sort((a, b) => b.t - a.t)
+      .slice(state.keep);
+    antigos.forEach(({ f }) => fs.unlinkSync(path.join(state.dir, f)));
+  } catch (err) {
+    console.error('Falha ao rotacionar backups', err);
+  }
+
+  writeSettings({ lastBackupAt: new Date().toISOString() });
+  return { file, dir: state.dir };
+}
+
+/* ---- Captura rápida --------------------------------------------------------
+   Uma janelinha sem moldura que aparece por cima de qualquer aplicativo. Ela não
+   fala com o banco: manda o texto para a janela principal (a única que enxerga o
+   IndexedDB), que cria a tarefa e devolve a confirmação. */
+
+function createCaptureWindow() {
+  captureWindow = new BrowserWindow({
+    width: 560,
+    height: 108,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    center: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'capture-preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      devTools: false
+    }
+  });
+
+  captureWindow.loadFile(path.join(__dirname, 'capture.html'));
+  captureWindow.setVisibleOnAllWorkspaces(true);
+  captureWindow.on('blur', () => hideCapture());
+  captureWindow.on('closed', () => { captureWindow = null; });
+}
+
+function hideCapture() {
+  if (captureWindow && !captureWindow.isDestroyed() && captureWindow.isVisible()) {
+    captureWindow.hide();
+  }
+}
+
+function toggleCapture() {
+  // Sem janela principal não há onde gravar a tarefa.
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow(true);
+  }
+  if (!captureWindow || captureWindow.isDestroyed()) createCaptureWindow();
+  if (captureWindow.isVisible()) {
+    hideCapture();
+    return;
+  }
+  // Um pouco acima do centro: é onde o olho já está.
+  const { workArea } = require('electron').screen.getDisplayNearestPoint(
+    require('electron').screen.getCursorScreenPoint()
+  );
+  const [w, h] = captureWindow.getSize();
+  captureWindow.setBounds({
+    x: Math.round(workArea.x + (workArea.width - w) / 2),
+    y: Math.round(workArea.y + workArea.height * 0.24),
+    width: w,
+    height: h
+  });
+  captureWindow.webContents.send('capture:reset');
+  captureWindow.show();
+  captureWindow.focus();
+}
+
+/** (Re)registra o atalho global. Devolve o que foi aplicado, para a interface. */
+function applyCaptureShortcut() {
+  const s = readSettings();
+  const enabled = s.quickCaptureEnabled !== false; // padrão: ligado
+  const accelerator = s.captureShortcut || DEFAULT_CAPTURE_SHORTCUT;
+
+  if (captureShortcut) {
+    globalShortcut.unregister(captureShortcut);
+    captureShortcut = null;
+  }
+  if (!enabled) return { enabled: false, accelerator, registered: false };
+
+  let registered = false;
+  try {
+    registered = globalShortcut.register(accelerator, () => toggleCapture());
+  } catch {
+    registered = false;
+  }
+  if (registered) captureShortcut = accelerator;
+  return { enabled: true, accelerator, registered };
+}
+
 function showWindow() {
   if (!mainWindow) {
     createWindow(false);
@@ -276,6 +472,23 @@ app.whenReady().then(() => {
   // não pode criar splash/janela, senão sobra um splash órfão na tela.
   if (!gotTheLock) return;
   Menu.setApplicationMenu(null);
+
+  // Serve os anexos gravados em disco — e nada além deles.
+  protocol.handle('tudu-file', (request) => {
+    try {
+      const nome = decodeURIComponent(new URL(request.url).pathname).replace(/^\/+/, '');
+      const seguro = safeAttachmentName(nome);
+      if (!seguro) return new Response('', { status: 400 });
+      const alvo = path.join(attachmentsDir(), seguro);
+      if (path.dirname(path.resolve(alvo)) !== path.resolve(attachmentsDir())) {
+        return new Response('', { status: 403 });
+      }
+      if (!fs.existsSync(alvo)) return new Response('', { status: 404 });
+      return net.fetch(pathToFileURL(alvo).toString());
+    } catch {
+      return new Response('', { status: 400 });
+    }
+  });
 
   const settings = readSettings();
   const startHidden = !!settings.startMinimized || process.argv.includes('--hidden');
@@ -377,6 +590,163 @@ app.whenReady().then(() => {
 
   ipcMain.handle('settings:check-updates', () => runUpdateCheck());
 
+  // ---- Anexos em disco ----
+
+  ipcMain.handle('files:save', (_event, payload) => {
+    try {
+      const ext = String(payload?.ext ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+      const nome = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}${ext ? '.' + ext : ''}`;
+      const seguro = safeAttachmentName(nome);
+      if (!seguro) throw new Error('Nome inválido');
+      const dir = attachmentsDir();
+      fs.mkdirSync(dir, { recursive: true });
+      const buffer = Buffer.from(String(payload?.base64 ?? ''), 'base64');
+      if (buffer.length === 0) throw new Error('Arquivo vazio');
+      fs.writeFileSync(path.join(dir, seguro), buffer);
+      return { ok: true, file: seguro, size: buffer.length };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  ipcMain.handle('files:delete', (_event, name) => {
+    const seguro = safeAttachmentName(String(name ?? ''));
+    if (!seguro) return false;
+    try {
+      fs.unlinkSync(path.join(attachmentsDir(), seguro));
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  // Apaga anexos que nenhuma tarefa referencia mais (tarefa excluída de vez).
+  ipcMain.handle('files:prune', (_event, usados) => {
+    const manter = new Set(Array.isArray(usados) ? usados.filter(n => safeAttachmentName(String(n))) : []);
+    let removidos = 0;
+    try {
+      for (const f of fs.readdirSync(attachmentsDir())) {
+        if (!manter.has(f)) {
+          fs.unlinkSync(path.join(attachmentsDir(), f));
+          removidos++;
+        }
+      }
+    } catch { /* pasta ainda não existe */ }
+    return removidos;
+  });
+
+  // ---- Backup em pasta ----
+
+  ipcMain.handle('backup:state', () => backupState());
+
+  ipcMain.handle('backup:set', (_event, options) => {
+    const patch = {};
+    if (typeof options?.enabled === 'boolean') patch.autoBackupEnabled = options.enabled;
+    if (typeof options?.dir === 'string' && options.dir.trim()) patch.backupDir = options.dir.trim();
+    if (Number(options?.keep) > 0) patch.backupKeep = Math.min(60, Math.round(Number(options.keep)));
+    writeSettings(patch);
+    return backupState();
+  });
+
+  // Escolha da pasta: só por diálogo nativo — o renderer nunca dita um caminho.
+  ipcMain.handle('backup:choose-dir', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Pasta para os backups do TuDu',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: backupState().dir,
+    });
+    if (result.canceled || !result.filePaths[0]) return backupState();
+    writeSettings({ backupDir: result.filePaths[0] });
+    return backupState();
+  });
+
+  ipcMain.handle('backup:write', (_event, json) => {
+    try {
+      const texto = String(json ?? '');
+      if (texto.length < 2) throw new Error('Conteúdo vazio');
+      const { file, dir } = writeBackup(texto);
+      return { ok: true, file, dir, state: backupState() };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  ipcMain.handle('backup:open-dir', () => {
+    const dir = backupState().dir;
+    fs.mkdirSync(dir, { recursive: true });
+    return shell.openPath(dir);
+  });
+
+  // Restauração: lê um backup da pasta e devolve o JSON para o renderer aplicar.
+  ipcMain.handle('backup:list', () => {
+    const dir = backupState().dir;
+    try {
+      return fs.readdirSync(dir)
+        .filter(f => f.startsWith(BACKUP_PREFIX) && f.endsWith('.json'))
+        .map(f => {
+          const st = fs.statSync(path.join(dir, f));
+          return { name: f, size: st.size, at: new Date(st.mtimeMs).toISOString() };
+        })
+        .sort((a, b) => b.at.localeCompare(a.at));
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle('backup:read', (_event, name) => {
+    // Só nomes gerados por nós, e sempre dentro da pasta de backup.
+    const seguro = String(name ?? '');
+    if (!/^tudu-backup-[\w-]+\.json$/.test(seguro)) return null;
+    const dir = backupState().dir;
+    const alvo = path.join(dir, seguro);
+    if (path.dirname(path.resolve(alvo)) !== path.resolve(dir)) return null;
+    try {
+      return fs.readFileSync(alvo, 'utf-8');
+    } catch {
+      return null;
+    }
+  });
+
+  // ---- Captura rápida ----
+
+  ipcMain.on('capture:close', () => hideCapture());
+
+  ipcMain.on('capture:submit', (_event, text) => {
+    const limpo = String(text ?? '').slice(0, 500).trim();
+    if (!limpo) return;
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow(true);
+    mainWindow.webContents.send('capture:text', limpo);
+  });
+
+  // O renderer confirma que gravou; a janelinha mostra e some.
+  ipcMain.on('capture:saved', (_event, title) => {
+    if (captureWindow && !captureWindow.isDestroyed() && captureWindow.isVisible()) {
+      captureWindow.webContents.send('capture:saved', String(title ?? '').slice(0, 120));
+      setTimeout(hideCapture, 900);
+    }
+  });
+
+  ipcMain.handle('capture:get', () => {
+    const s = readSettings();
+    return {
+      enabled: s.quickCaptureEnabled !== false,
+      accelerator: s.captureShortcut || DEFAULT_CAPTURE_SHORTCUT,
+      registered: !!captureShortcut,
+      defaultAccelerator: DEFAULT_CAPTURE_SHORTCUT
+    };
+  });
+
+  ipcMain.handle('capture:set', (_event, options) => {
+    const patch = {};
+    if (typeof options?.enabled === 'boolean') patch.quickCaptureEnabled = options.enabled;
+    if (typeof options?.accelerator === 'string' && options.accelerator.trim()) {
+      patch.captureShortcut = options.accelerator.trim().slice(0, 60);
+    }
+    writeSettings(patch);
+    const result = applyCaptureShortcut();
+    return { ...result, defaultAccelerator: DEFAULT_CAPTURE_SHORTCUT };
+  });
+
   // ---- Ponte local (MCP) ----
 
   ipcMain.handle('bridge:status', () => ({
@@ -403,6 +773,7 @@ app.whenReady().then(() => {
   ipcMain.on('bridge:response', (_event, message) => bridge.resolveFromRenderer(message));
 
   startBridgeIfEnabled();
+  applyCaptureShortcut();
 
   ipcMain.handle('update:install', () => {
     if (autoUpdater) {
@@ -443,4 +814,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   app.isQuitting = true;
   bridge.stop();
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });

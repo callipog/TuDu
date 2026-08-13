@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Archive, BarChart3, Bell, BellOff, Calendar, CalendarClock, Check, ChevronDown, Clock, FolderKanban, Inbox, Keyboard, Layout, List, Plus, Search, Settings, Sidebar as SidebarIcon, Timer, Trash2, Users, X } from 'lucide-react';
+import { AlertTriangle, Archive, BarChart3, Bell, BellOff, Calendar, CalendarClock, Check, ChevronDown, Clock, Diamond, FolderKanban, GripVertical, HelpCircle, Inbox, Keyboard, Layout, List, Plus, Search, Settings, Sidebar as SidebarIcon, Timer, Trash2, Users, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Task, Urgency, Recurrence, RecurrenceEnd, SubTask, TaskStatus, Attachment } from './types';
+import { Task, Urgency, Recurrence, RecurrenceEnd, SubTask, TaskStatus, Attachment, Template } from './types';
 import { taskService } from './services/tasks';
 import { notificationService, DEFAULT_REMINDER_MINUTES } from './services/notifications';
 import { parseQuickAdd } from './services/quickAdd';
@@ -32,9 +32,15 @@ import { ManagePersonasModal } from './components/ManagePersonasModal';
 import { ProjectSettingsModal } from './components/ProjectSettingsModal';
 import { ProjectsManagerView } from './components/ProjectsManagerView';
 import { RoadmapReviewModal } from './components/RoadmapReviewModal';
+import { TemplatesModal } from './components/TemplatesModal';
+import { MilestoneHelpModal } from './components/MilestoneHelpModal';
+import { templateService } from './services/templates';
 import { startBridgeListener, respondOk, respondError, PendingReview } from './services/bridge';
 import { applyPlan } from './services/roadmap';
 import { backupService } from './services/backup';
+import { taskMatches } from './services/search';
+import { attachmentService } from './services/attachments';
+import { useSortableList } from './hooks/useSortableList';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 import { projectService, sortEpics } from './services/projects';
@@ -98,10 +104,15 @@ export default function App() {
   const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false);
   const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null);
   const [isPersonasModalOpen, setIsPersonasModalOpen] = useState(false);
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [isMilestoneHelpOpen, setIsMilestoneHelpOpen] = useState(false);
   const [taskMenu, setTaskMenu] = useState<TaskMenuState | null>(null);
   const [newTaskProjectId, setNewTaskProjectId] = useState<string>('');
   const [newTaskEpicId, setNewTaskEpicId] = useState<string>('');
   const [newTaskAssigneeId, setNewTaskAssigneeId] = useState<string>('');
+  const [newTaskMilestone, setNewTaskMilestone] = useState(false);
+  const [newTaskDependsOn, setNewTaskDependsOn] = useState<string[]>([]);
+  const [newTaskEstimate, setNewTaskEstimate] = useState<string>('');
 
   // Camada gerencial (reativa via Dexie).
   const projects = useLiveQuery(() => db.projects.orderBy('createdAt').toArray(), []) ?? [];
@@ -132,7 +143,19 @@ export default function App() {
     loadTasks();
     loadTags();
     notificationService.start();
-    return () => notificationService.stop();
+    const stopBackup = backupService.startAutoBackup();
+    return () => { notificationService.stop(); stopBackup(); };
+  }, []);
+
+  // Captura rápida: o texto vem da janelinha do atalho global e vira tarefa aqui
+  // (só este renderer enxerga o banco). A confirmação volta para ela.
+  useEffect(() => {
+    const b = typeof window !== 'undefined' ? window.tudu : null;
+    if (!b?.capture) return;
+    return b.capture.onText(async (text) => {
+      const task = await handleQuickAdd(text, { silent: true });
+      if (task) b.capture!.saved(task.title);
+    });
   }, []);
 
   // Ponte local: agentes de IA propõem, o usuário confirma na tela de revisão.
@@ -278,6 +301,18 @@ export default function App() {
       await taskService.purgeExpired(30); // limpa a lixeira de itens com +30 dias
       const data = await taskService.getTasks();
       setTasks(data);
+
+      // Anexos: leva os antigos (base64 no banco) para disco e recolhe os
+      // arquivos que sobraram de tarefas apagadas de vez.
+      const movidos = await attachmentService.migrateLegacy();
+      if (movidos > 0) {
+        const atualizadas = await taskService.getTasks();
+        setTasks(atualizadas);
+        showToast(`${movidos} anexo(s) movido(s) do banco para arquivos — o app fica mais leve.`);
+        attachmentService.pruneOrphans(atualizadas);
+      } else {
+        attachmentService.pruneOrphans(data);
+      }
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar tarefas');
     } finally {
@@ -324,9 +359,9 @@ export default function App() {
     setIsModalOpen(true);
   }
 
-  async function handleQuickAdd(input: string) {
+  async function handleQuickAdd(input: string, opts?: { silent?: boolean }): Promise<Task | null> {
     const parsed = parseQuickAdd(input);
-    if (!parsed.title) return;
+    if (!parsed.title) return null;
     try {
       // Registra tags novas com uma cor padrão (não sobrescreve as existentes).
       parsed.tags.forEach(tag => {
@@ -345,12 +380,18 @@ export default function App() {
       });
       setTasks(prev => [newTask, ...prev]);
       loadTags();
-      showToast(`Tarefa criada: "${parsed.title}"`, {
-        actionLabel: 'Editar',
-        onAction: () => handleEditTask(newTask),
-      });
+      // Na captura global a janela pode estar escondida: quem confirma é a
+      // própria janelinha, então o toast aqui só apareceria depois, sem contexto.
+      if (!opts?.silent) {
+        showToast(`Tarefa criada: "${parsed.title}"`, {
+          actionLabel: 'Editar',
+          onAction: () => handleEditTask(newTask),
+        });
+      }
+      return newTask;
     } catch (err) {
       console.error('Failed to quick-add task', err);
+      return null;
     }
   }
 
@@ -381,6 +422,9 @@ export default function App() {
     setNewTaskProjectId(task.projectId ?? '');
     setNewTaskEpicId(task.epicId ?? '');
     setNewTaskAssigneeId(task.assigneeId ?? '');
+    setNewTaskMilestone(!!task.milestone);
+    setNewTaskDependsOn(task.dependsOn ?? []);
+    setNewTaskEstimate(task.estimateMinutes ? String(task.estimateMinutes / 60) : '');
     setModalStep(0);
     setModalError(null);
     setIsModalOpen(true);
@@ -409,6 +453,9 @@ export default function App() {
     setNewTaskProjectId(activeTab === 'project' && activeProjectId ? activeProjectId : '');
     setNewTaskEpicId('');
     setNewTaskAssigneeId('');
+    setNewTaskMilestone(false);
+    setNewTaskDependsOn([]);
+    setNewTaskEstimate('');
     setModalStep(0);
     setModalError(null);
   }
@@ -457,6 +504,24 @@ export default function App() {
     });
   }
 
+  /** Arquiva uma tarefa só (pelo menu de contexto, com a tarefa finalizada). */
+  async function handleArchiveTask(task: Task) {
+    try {
+      const archivedAt = await taskService.archiveTask(task.id);
+      applyTaskPatch(task.id, { archived: true, archivedAt });
+      showToast(`"${task.title}" arquivada.`, {
+        actionLabel: 'Desfazer',
+        onAction: async () => {
+          await taskService.unarchiveTask(task.id);
+          applyTaskPatch(task.id, { archived: false, archivedAt: undefined });
+        },
+      });
+    } catch (err) {
+      console.error('Failed to archive task', err);
+      showToast('Não foi possível arquivar a tarefa.');
+    }
+  }
+
   async function handleUnarchiveTask(task: Task) {
     try {
       await taskService.unarchiveTask(task.id);
@@ -465,6 +530,13 @@ export default function App() {
       console.error('Failed to unarchive task', err);
     }
   }
+
+  // Reordenação das subtarefas no formulário (arrastar pelo punho).
+  const subtaskSort = useSortableList(
+    newTaskSubtasks.map(s => s.id),
+    (ids) => setNewTaskSubtasks(ids.map(id => newTaskSubtasks.find(s => s.id === id)!)),
+    'y'
+  );
 
   function addSubtask() {
     const title = newSubtaskTitle.trim();
@@ -519,6 +591,79 @@ export default function App() {
     } catch (err) {
       console.error('Failed to remove comment', err);
       showToast('Não foi possível apagar o comentário.');
+    }
+  }
+
+  /* ---- Modelos (templates) ---- */
+
+  async function handleSaveTaskTemplate(task: Task) {
+    const nome = window.prompt('Nome do modelo:', task.title);
+    if (nome === null) return;
+    await templateService.saveTask(nome, task);
+    showToast(`Modelo "${nome.trim() || task.title}" salvo.`, {
+      actionLabel: 'Ver modelos',
+      onAction: () => setIsTemplatesOpen(true),
+    });
+  }
+
+  async function handleSaveProjectTemplate(projectId: string) {
+    const projeto = projectById(projectId);
+    if (!projeto) return;
+    const nome = window.prompt('Nome do modelo de projeto:', projeto.name);
+    if (nome === null) return;
+    await templateService.saveProject(nome, projeto, epics, tasks);
+    showToast(`Modelo "${nome.trim() || projeto.name}" salvo.`, {
+      actionLabel: 'Ver modelos',
+      onAction: () => setIsTemplatesOpen(true),
+    });
+  }
+
+  async function handleUseTaskTemplate(template: Template) {
+    const criada = await templateService.createTaskFrom(template, {
+      projectId: activeTab === 'project' && activeProjectId ? activeProjectId : undefined,
+    });
+    if (!criada) return;
+    setTasks(prev => [criada, ...prev]);
+    loadTags();
+    setIsTemplatesOpen(false);
+    showToast(`Tarefa criada de "${template.name}".`, {
+      actionLabel: 'Editar',
+      onAction: () => handleEditTask(criada),
+    });
+  }
+
+  async function handleUseProjectTemplate(template: Template, nome: string) {
+    const novoId = await templateService.createProjectFrom(template, nome);
+    if (!novoId) return;
+    await loadTasks();
+    loadTags();
+    setIsTemplatesOpen(false);
+    setActiveProjectId(novoId);
+    setActiveTab('project');
+    showToast(`Projeto criado de "${template.name}".`);
+  }
+
+  /** Apontamento de tempo (bloco do Pomodoro ou lançamento manual). */
+  async function handleLogTime(taskId: string, minutes: number, source: 'pomodoro' | 'manual' = 'pomodoro') {
+    try {
+      const { spentMinutes, timeEntries } = await taskService.addTimeEntry(taskId, minutes, source);
+      applyTaskPatch(taskId, { spentMinutes, timeEntries });
+      if (source === 'pomodoro') {
+        const nome = tasks.find(t => t.id === taskId)?.title ?? 'tarefa';
+        showToast(`${minutes} min lançados em "${nome}".`);
+      }
+    } catch (err) {
+      console.error('Failed to log time', err);
+      showToast('Não foi possível lançar o tempo.');
+    }
+  }
+
+  async function handleRemoveTimeEntry(taskId: string, entryId: string) {
+    try {
+      const { spentMinutes, timeEntries } = await taskService.removeTimeEntry(taskId, entryId);
+      applyTaskPatch(taskId, { spentMinutes, timeEntries });
+    } catch (err) {
+      console.error('Failed to remove time entry', err);
     }
   }
 
@@ -589,6 +734,10 @@ export default function App() {
         projectId: newTaskProjectId || undefined,
         epicId: newTaskProjectId && newTaskEpicId ? newTaskEpicId : undefined,
         assigneeId: newTaskAssigneeId || undefined,
+        milestone: newTaskMilestone || undefined,
+        // Dependência só faz sentido dentro do projeto onde a tarefa está.
+        dependsOn: newTaskProjectId && newTaskDependsOn.length > 0 ? newTaskDependsOn : undefined,
+        estimateMinutes: newTaskEstimate.trim() ? Math.max(0, Math.round(Number(newTaskEstimate.replace(',', '.')) * 60)) : undefined,
       };
 
       if (editingTask) {
@@ -717,16 +866,29 @@ export default function App() {
   // Filter tasks based on active tab
   // Filtros comuns (busca / tag / criticidade), aplicados em todas as views.
   const matchesCommonFilters = (task: Task) => {
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      if (!task.title.toLowerCase().includes(q) && !(task.description || '').toLowerCase().includes(q)) {
-        return false;
-      }
-    }
+    if (searchQuery.trim() && !matchesSearch(task, searchQuery)) return false;
     if (activeTagFilter && !task.tags.includes(activeTagFilter)) return false;
     if (activeUrgencyFilter && task.urgency !== activeUrgencyFilter) return false;
     return true;
   };
+
+  // Contexto da busca: os nomes que só o App sabe resolver.
+  const searchContext = {
+    projectName: (id?: string) => projectById(id)?.name,
+    epicName: (id?: string) => epicById(id)?.name,
+    assigneeName: (id?: string) => personaById(id)?.name,
+  };
+
+  const matchesSearch = (task: Task, query: string) => taskMatches(task, query, searchContext);
+
+  // Busca com a caixa do topo preenchida: alcança também arquivadas e lixeira,
+  // que ficam fora das views normais e some, sem isso, do alcance do usuário.
+  const globalMatches = React.useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    return tasks
+      .filter(t => (t.archived || t.deleted) && matchesSearch(t, searchQuery))
+      .slice(0, 8);
+  }, [tasks, searchQuery, projects, epics, personas]);
 
   // Tarefas ativas (não arquivadas, não deletadas) para as views normais.
   const activeTasks = tasks.filter(t => !t.archived && !t.deleted);
@@ -771,6 +933,15 @@ export default function App() {
   // Ao criar tarefa dentro de um projeto, ela já fica vinculada (select oculto).
   const projectLocked = !editingTask && activeTab === 'project' && !!activeProjectId;
 
+  // Candidatas a predecessora: tarefas ativas do mesmo projeto, menos ela mesma.
+  // Sem projeto não há cronograma, então a lista fica vazia.
+  const dependencyCandidates = React.useMemo(() => {
+    if (!newTaskProjectId) return [];
+    return activeTasks
+      .filter(t => t.projectId === newTaskProjectId && t.id !== editingTask?.id)
+      .sort((a, b) => (a.startDate || a.dueDate || '').localeCompare(b.startDate || b.dueDate || ''));
+  }, [activeTasks, newTaskProjectId, editingTask]);
+
   // Rótulo de status resolvendo as colunas do projeto da tarefa.
   const statusLabelOf = (task: Task) => resolveStatusLabel(task.status, task.completed, columnsFor(projectById(task.projectId)));
   // Cor do status (ponto/barra), também resolvendo pelas colunas do projeto.
@@ -800,6 +971,7 @@ export default function App() {
             onManageProjects={() => { setActiveTab('projects'); setSelectedDateFilter(null); }}
             onManagePersonas={() => setIsPersonasModalOpen(true)}
             onManageTags={() => setIsManageTagsModalOpen(true)}
+            onTemplates={() => setIsTemplatesOpen(true)}
             onPomodoro={() => setIsPomodoroOpen(true)}
             onSettings={() => setIsSettingsOpen(true)}
             onShortcuts={() => setIsShortcutsOpen(true)}
@@ -968,6 +1140,35 @@ export default function App() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-4 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:bg-white/10 transition-all w-64"
               />
+              {/* Achados fora das views normais: sem isto, arquivadas e lixeira
+                  ficariam invisíveis para quem está buscando. */}
+              {globalMatches.length > 0 && (
+                <div className="absolute top-full right-0 mt-2 w-80 z-50 rounded-xl border border-white/10 bg-[#18181b] shadow-2xl shadow-black/50 overflow-hidden">
+                  <p className="px-3 py-2 text-[10px] uppercase font-bold tracking-wider text-zinc-500 border-b border-white/5">
+                    Também encontrado fora daqui
+                  </p>
+                  <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                    {globalMatches.map(task => (
+                      <button
+                        key={task.id}
+                        onClick={() => {
+                          setActiveTab(task.deleted ? 'trash' : 'archived');
+                          setSelectedDateFilter(null);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 transition-colors"
+                      >
+                        <span className={`shrink-0 ${task.deleted ? 'text-rose-400' : 'text-zinc-500'}`}>
+                          {task.deleted ? <Trash2 size={13} /> : <Archive size={13} />}
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-xs text-white truncate">{task.title}</span>
+                          <span className="block text-[10px] text-zinc-500">{task.deleted ? 'Na lixeira' : 'Arquivada'}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <button
               onClick={() => setIsPomodoroOpen(true)}
@@ -1164,6 +1365,7 @@ export default function App() {
                 onToggleSubtask={handleToggleSubtask}
                 tasks={activeTasks.filter(t => t.projectId === activeProjectId).filter(matchesCommonFilters)}
                 onEditProject={() => { setSettingsProjectId(activeProjectId); setIsProjectSettingsOpen(true); }}
+                onSaveTemplate={() => handleSaveProjectTemplate(activeProjectId)}
                 onToggleTask={handleToggleTask}
                 onClickTask={handleEditTask}
                 onToggleNotifications={handleToggleNotifications}
@@ -1355,6 +1557,20 @@ export default function App() {
                 </div>
                 <p className="text-[11px] text-zinc-500">Deixar o horário em 00:00 significa "sem hora definida".</p>
 
+                <div className="sm:w-1/2">
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">Estimativa (horas)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={newTaskEstimate}
+                    onChange={(e) => setNewTaskEstimate(e.target.value)}
+                    placeholder="Ex: 3.5"
+                    className="w-full bg-[#18181b] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors [color-scheme:dark]"
+                  />
+                  <p className="text-[11px] text-zinc-500 mt-1">Comparada com o tempo apontado no Pomodoro, nos Relatórios.</p>
+                </div>
+
                 <div>
                   <label className="block text-xs font-medium text-zinc-400 mb-1">Repetir</label>
                   <select
@@ -1454,6 +1670,66 @@ export default function App() {
                     projectName={projectById(newTaskProjectId)?.name}
                   />
                 </div>
+
+                {/* Cronograma: marco e dependências (aparecem no Gantt) */}
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-2 text-sm font-medium text-white">
+                      <Diamond size={14} className={newTaskMilestone ? 'text-amber-400 fill-amber-400' : 'text-zinc-500'} />
+                      Marco do cronograma
+                      {/* Ajuda no lugar da dúvida: ao lado do próprio controle. */}
+                      <button
+                        type="button"
+                        onClick={() => setIsMilestoneHelpOpen(true)}
+                        title="Como funcionam os marcos e as dependências"
+                        className="flex items-center gap-1 text-[11px] font-medium text-zinc-500 hover:text-indigo-300 transition-colors"
+                      >
+                        <HelpCircle size={13} /> Como funciona
+                      </button>
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={newTaskMilestone}
+                      onClick={() => setNewTaskMilestone(v => !v)}
+                      className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${newTaskMilestone ? 'bg-amber-500' : 'bg-white/10'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${newTaskMilestone ? 'translate-x-5' : ''}`} />
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-zinc-500 -mt-1">Data única, sem duração: vira um losango no Gantt.</p>
+
+                  {dependencyCandidates.length > 0 && (
+                    <div className="pt-1 border-t border-white/5">
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5 mt-3">
+                        Depende de
+                        {newTaskDependsOn.length > 0 && <span className="text-zinc-500"> · {newTaskDependsOn.length} selecionada(s)</span>}
+                      </label>
+                      <p className="text-[11px] text-zinc-500 mb-2">Estas precisam terminar antes desta começar. O Gantt liga as duas com uma seta.</p>
+                      <div className="max-h-36 overflow-y-auto custom-scrollbar rounded-lg border border-white/10 divide-y divide-white/5">
+                        {dependencyCandidates.map(dep => {
+                          const on = newTaskDependsOn.includes(dep.id);
+                          return (
+                            <button
+                              key={dep.id}
+                              type="button"
+                              onClick={() => setNewTaskDependsOn(on ? newTaskDependsOn.filter(id => id !== dep.id) : [...newTaskDependsOn, dep.id])}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-white/5 transition-colors"
+                            >
+                              <span className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${on ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-500'}`}>
+                                {on && <Check size={10} strokeWidth={4} />}
+                              </span>
+                              <span className={`flex-1 min-w-0 text-xs truncate ${dep.completed ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>{dep.title}</span>
+                              {dep.dueDate && (
+                                <span className="shrink-0 text-[10px] font-mono text-zinc-500">{format(parseISO(dep.dueDate), 'dd/MM')}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1496,18 +1772,37 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Subtarefas</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">
+                    Subtarefas
+                    {newTaskSubtasks.length > 1 && (
+                      <span className="ml-2 font-normal text-zinc-500">· arraste pelo punho para reordenar</span>
+                    )}
+                  </label>
                   {newTaskSubtasks.length > 0 && (
-                    <div className="space-y-1.5 mb-2">
-                      {newTaskSubtasks.map(sub => (
-                        <div key={sub.id} className="flex items-center gap-2 group">
-                          <button type="button" onClick={() => toggleSubtask(sub.id)} className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${sub.done ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-500 hover:border-indigo-500'}`}>
-                            {sub.done && <Check size={10} strokeWidth={4} />}
-                          </button>
-                          <span className={`flex-1 text-sm ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`}>{sub.title}</span>
-                          <button type="button" onClick={() => removeSubtask(sub.id)} className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 transition-all"><X size={14} /></button>
-                        </div>
-                      ))}
+                    <div ref={subtaskSort.containerRef} className="space-y-1.5 mb-2">
+                      {newTaskSubtasks.map(sub => {
+                        const drop = subtaskSort.itemProps(sub.id);
+                        return (
+                          <div
+                            key={sub.id}
+                            {...drop}
+                            className={`flex items-center gap-2 group rounded-lg ${subtaskSort.itemClass(sub.id)}`}
+                          >
+                            <span
+                              {...subtaskSort.handleProps(sub.id)}
+                              title="Arraste para reordenar"
+                              className="drag-handle shrink-0 text-zinc-600 hover:text-zinc-300 cursor-grab active:cursor-grabbing"
+                            >
+                              <GripVertical size={14} />
+                            </span>
+                            <button type="button" onClick={() => toggleSubtask(sub.id)} className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${sub.done ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-500 hover:border-indigo-500'}`}>
+                              {sub.done && <Check size={10} strokeWidth={4} />}
+                            </button>
+                            <span className={`flex-1 text-sm ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`}>{sub.title}</span>
+                            <button type="button" onClick={() => removeSubtask(sub.id)} className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 transition-all"><X size={14} /></button>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                   <div className="flex gap-2">
@@ -1566,6 +1861,8 @@ export default function App() {
         statusText={detailTask ? statusLabelOf(detailTask) : undefined}
         onAddComment={handleAddComment}
         onDeleteComment={handleDeleteComment}
+        onAddTime={(task, minutes) => handleLogTime(task.id, minutes, 'manual')}
+        onDeleteTime={(task, entryId) => handleRemoveTimeEntry(task.id, entryId)}
         focusComments={detailFocusComments}
       />
 
@@ -1588,6 +1885,7 @@ export default function App() {
         isOpen={isPomodoroOpen}
         onClose={() => setIsPomodoroOpen(false)}
         tasks={activeTasks.filter(t => !t.completed)}
+        onLogTime={(taskId, minutes) => handleLogTime(taskId, minutes, 'pomodoro')}
       />
 
       <CommandPalette
@@ -1632,6 +1930,22 @@ export default function App() {
         onDelete={moveTaskToTrash}
         onAddSubtask={handleQuickAddSubtask}
         onComment={(task) => { setDetailFocusComments(true); setDetailTask(task); }}
+        onSaveTemplate={handleSaveTaskTemplate}
+        onArchive={handleArchiveTask}
+      />
+
+      {/* Depois do modal da tarefa na ordem do DOM: os dois usam z-50, então
+          quem vem por último é quem fica por cima. */}
+      <MilestoneHelpModal
+        isOpen={isMilestoneHelpOpen}
+        onClose={() => setIsMilestoneHelpOpen(false)}
+      />
+
+      <TemplatesModal
+        isOpen={isTemplatesOpen}
+        onClose={() => setIsTemplatesOpen(false)}
+        onUseTask={handleUseTaskTemplate}
+        onUseProject={handleUseProjectTemplate}
       />
 
       <RoadmapReviewModal

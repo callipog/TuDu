@@ -6,7 +6,7 @@ import { Avatar } from './Avatar';
 import { AttachmentsView } from './Attachments';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Pencil, Bell, BellOff, Repeat, Check, CalendarClock, MessageSquare, Lock, Trash2, Send } from 'lucide-react';
+import { Pencil, Bell, BellOff, Repeat, Check, CalendarClock, MessageSquare, Lock, Trash2, Send, Timer } from 'lucide-react';
 
 interface TaskDetailModalProps {
   isOpen: boolean;
@@ -20,6 +20,9 @@ interface TaskDetailModalProps {
   /** Comentar só é liberado com a tarefa finalizada. */
   onAddComment?: (task: Task, text: string) => void;
   onDeleteComment?: (task: Task, commentId: string) => void;
+  /** Lançamento manual de tempo — também liberado com a tarefa finalizada. */
+  onAddTime?: (task: Task, minutes: number) => void;
+  onDeleteTime?: (task: Task, entryId: string) => void;
   /** Abre com o campo de comentário focado (vindo do menu de contexto). */
   focusComments?: boolean;
 }
@@ -62,6 +65,14 @@ function reminderLabel(min?: number): string {
   return `${min / 1440} dia(s) antes`;
 }
 
+/** "3h 30min" — minutos crus são difíceis de ler em estimativa. */
+export function formatDuracao(minutes: number): string {
+  if (minutes < 60) return `${minutes}min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -71,14 +82,19 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, project, epic, statusText, onAddComment, onDeleteComment, focusComments }: TaskDetailModalProps) {
+export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, project, epic, statusText, onAddComment, onDeleteComment, onAddTime, onDeleteTime, focusComments }: TaskDetailModalProps) {
   const [comment, setComment] = useState('');
+  const [horas, setHoras] = useState('');
+  const [minutos, setMinutos] = useState('');
   const commentRef = useRef<HTMLTextAreaElement>(null);
   const podeComentar = !!task?.completed && !!onAddComment;
+  const podeLancarTempo = !!task?.completed && !!onAddTime;
 
   // Troca de tarefa (ou fechar) descarta o rascunho não enviado.
   useEffect(() => {
     setComment('');
+    setHoras('');
+    setMinutos('');
   }, [task?.id, isOpen]);
 
   useEffect(() => {
@@ -92,6 +108,17 @@ export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, proje
   if (!task) return null;
 
   const comments = task.comments ?? [];
+  const estouro = !!task.estimateMinutes && (task.spentMinutes ?? 0) > task.estimateMinutes;
+
+  const entries = task.timeEntries ?? [];
+
+  const lancarTempo = () => {
+    const total = Math.round((Number(horas.replace(',', '.')) || 0) * 60 + (Number(minutos) || 0));
+    if (!onAddTime || total <= 0) return;
+    onAddTime(task, total);
+    setHoras('');
+    setMinutos('');
+  };
 
   const enviarComentario = () => {
     const texto = comment.trim();
@@ -145,6 +172,13 @@ export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, proje
               ? <span className="flex items-center gap-1.5 text-indigo-400"><Bell size={14} /> Ativas · {reminderLabel(task.reminderMinutes)}</span>
               : <span className="flex items-center gap-1.5 text-zinc-500"><BellOff size={14} /> Desativadas</span>}
           </Field>
+          {!!task.estimateMinutes && (
+            <Field label="Estimativa">
+              <span className="flex items-center gap-1.5">
+                <Timer size={14} className="text-zinc-500" />{formatDuracao(task.estimateMinutes)}
+              </span>
+            </Field>
+          )}
           <Field label="Criada em">
             {task.createdAt ? format(parseISO(task.createdAt), "dd/MM/yyyy", { locale: ptBR }) : '—'}
           </Field>
@@ -203,6 +237,76 @@ export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, proje
           <Field label={`Anexos · ${task.attachments.length}`}>
             <div className="mt-1">
               <AttachmentsView attachments={task.attachments} />
+            </div>
+          </Field>
+        )}
+
+        {/* Tempo gasto: mesmo esquema do comentário — abre ao finalizar. */}
+        {(onAddTime || entries.length > 0) && (
+          <Field label={task.spentMinutes ? `Tempo gasto · ${formatDuracao(task.spentMinutes)}` : 'Tempo gasto'}>
+            <div className="space-y-2 mt-1">
+              {entries.map(e => (
+                <div key={e.id} className="group/t flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                  <Timer size={13} className={`shrink-0 ${e.source === 'pomodoro' ? 'text-indigo-400' : 'text-zinc-500'}`} />
+                  <span className="text-sm text-zinc-200">{formatDuracao(e.minutes)}</span>
+                  <span className="text-[10px] text-zinc-500">
+                    {e.source === 'pomodoro' ? 'Pomodoro' : 'Lançado à mão'} · {format(parseISO(e.startedAt), "dd/MM 'às' HH:mm", { locale: ptBR })}
+                  </span>
+                  {onDeleteTime && (
+                    <button
+                      onClick={() => onDeleteTime(task, e.id)}
+                      title="Apagar lançamento"
+                      className="ml-auto shrink-0 p-1 rounded-md text-zinc-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors opacity-0 group-hover/t:opacity-100"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              {podeLancarTempo ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    value={horas}
+                    onChange={(e) => setHoras(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lancarTempo(); } }}
+                    placeholder="0"
+                    className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-sm text-white text-center placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors [color-scheme:dark]"
+                  />
+                  <span className="text-xs text-zinc-500">h</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={minutos}
+                    onChange={(e) => setMinutos(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lancarTempo(); } }}
+                    placeholder="30"
+                    className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-sm text-white text-center placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors [color-scheme:dark]"
+                  />
+                  <span className="text-xs text-zinc-500">min</span>
+                  <button
+                    onClick={lancarTempo}
+                    disabled={!horas && !minutos}
+                    className="ml-auto shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:hover:bg-indigo-600 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+                  >
+                    <Timer size={13} /> Lançar
+                  </button>
+                </div>
+              ) : (
+                <p className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  <Lock size={12} /> O lançamento de tempo abre quando a tarefa for finalizada.
+                </p>
+              )}
+
+              {task.estimateMinutes ? (
+                <p className={`text-[11px] ${estouro ? 'text-rose-400' : 'text-zinc-500'}`}>
+                  Estimativa: {formatDuracao(task.estimateMinutes)}
+                  {estouro && ` · passou ${formatDuracao((task.spentMinutes ?? 0) - task.estimateMinutes)}`}
+                </p>
+              ) : null}
             </div>
           </Field>
         )}

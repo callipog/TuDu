@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { Task, SubTask, TaskComment } from '../types';
+import { Task, SubTask, TaskComment, TimeEntry } from '../types';
 import { addDays, addWeeks, addMonths, parseISO } from 'date-fns';
 
 /** Calcula a próxima data de entrega conforme a regra de recorrência. */
@@ -88,6 +88,39 @@ export const taskService = {
     });
   },
 
+  /**
+   * Lança tempo na tarefa (bloco de Pomodoro ou digitado à mão), somando ao
+   * total. Igual aos outros acréscimos, lê e grava dentro da transação.
+   */
+  async addTimeEntry(id: string, minutes: number, source: 'pomodoro' | 'manual'): Promise<{ spentMinutes: number; timeEntries: TimeEntry[] }> {
+    return await db.transaction('rw', db.tasks, async () => {
+      const task = await db.tasks.get(id);
+      if (!task) throw new Error('Task not found');
+      const entry: TimeEntry = {
+        id: crypto.randomUUID(),
+        minutes: Math.max(1, Math.round(minutes)),
+        startedAt: new Date().toISOString(),
+        source,
+      };
+      const timeEntries = [...(task.timeEntries ?? []), entry];
+      const spentMinutes = timeEntries.reduce((soma, e) => soma + e.minutes, 0);
+      await db.tasks.update(id, { timeEntries, spentMinutes });
+      return { spentMinutes, timeEntries };
+    });
+  },
+
+  /** Remove um apontamento e recalcula o total. */
+  async removeTimeEntry(id: string, entryId: string): Promise<{ spentMinutes: number; timeEntries: TimeEntry[] }> {
+    return await db.transaction('rw', db.tasks, async () => {
+      const task = await db.tasks.get(id);
+      if (!task) throw new Error('Task not found');
+      const timeEntries = (task.timeEntries ?? []).filter(e => e.id !== entryId);
+      const spentMinutes = timeEntries.reduce((soma, e) => soma + e.minutes, 0);
+      await db.tasks.update(id, { timeEntries, spentMinutes });
+      return { spentMinutes, timeEntries };
+    });
+  },
+
   /** Envia a tarefa para a lixeira (soft delete). */
   async deleteTask(id: string): Promise<void> {
     await db.tasks.update(id, { deleted: true, deletedAt: new Date().toISOString() });
@@ -139,6 +172,13 @@ export const taskService = {
       ids.map(id => db.tasks.update(id, { archived: true, archivedAt: now }))
     );
     return ids;
+  },
+
+  /** Arquiva uma tarefa (some das views normais, fica em Arquivados). */
+  async archiveTask(id: string): Promise<string> {
+    const now = new Date().toISOString();
+    await db.tasks.update(id, { archived: true, archivedAt: now });
+    return now;
   },
 
   /** Desarquiva uma tarefa, trazendo-a de volta para as views normais. */

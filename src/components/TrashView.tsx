@@ -4,6 +4,7 @@ import { tagService } from '../services/tags';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Trash2, ArchiveRestore, Search } from 'lucide-react';
+import { taskMatches } from '../services/search';
 
 interface TrashViewProps {
   tasks: Task[];
@@ -24,7 +25,7 @@ export function TrashView({ tasks, onRestore, onDeletePermanent, onEmptyTrash }:
 
   const filtered = useMemo(() => {
     return tasks
-      .filter(t => !search.trim() || t.title.toLowerCase().includes(search.toLowerCase()))
+      .filter(t => !search.trim() || taskMatches(t, search))
       .sort((a, b) => (b.deletedAt || '').localeCompare(a.deletedAt || ''));
   }, [tasks, search]);
 

@@ -15,7 +15,9 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Datas de início e entrega** com **seletor de calendário moderno** (hora opcional; sem hora = 00:00) — a entrega nunca pode ser antes do início.
 - **Níveis de criticidade** (Baixa, Média, Alta, Crítica) com indicadores de cor.
 - **Anexos**: links, trechos de código, imagens e **arquivos** (pdf, etc.).
-- **Subtarefas / checklist** com barra de progresso.
+- **Subtarefas / checklist** com barra de progresso e **reordenação por arrasto**.
+- **Estimativa e apontamento de tempo**: horas previstas na tarefa, blocos do Pomodoro lançados automaticamente, **lançamento manual ao finalizar** (h/min, como os comentários) e relatório de **previsto × realizado**.
+- **Modelos**: salve uma tarefa (ou um projeto inteiro, com épicos e tarefas) como modelo e recrie em um clique, com os prazos recalculados a partir de hoje.
 - **Carimbo de conclusão**: ao marcar como finalizada, a tarefa guarda a data e a hora — visíveis no card e nos detalhes.
 - **Comentários de conclusão**: com a tarefa finalizada, os detalhes liberam um campo para registrar como foi a entrega (data/hora em cada comentário). Reabrir a tarefa preserva o histórico e volta a travar a escrita.
 - **Tarefas recorrentes**: diária, semanal, mensal, **a cada N dias** ou **dias específicos da semana**, com término opcional (nunca / após N ocorrências / em uma data).
@@ -28,6 +30,7 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Tela de gerenciamento** de projetos (lista + detalhe) com **README em Markdown** (importe um `.md`) e arquivos anexos. A lista tem **frame redimensionável** (arraste o divisor) e **arraste horizontal** para ler nomes longos.
 - **Exportar em PDF**: gera uma documentação completa do projeto (dados, progresso, épicos, **Gantt/cronograma**, README e tarefas) via "Salvar como PDF".
 - **Visão Gantt** por projeto: tabela (ID, atividade, início, término, situação, criticidade) + timeline com mês, **número da semana**, dia e dia-da-semana. As tarefas ficam sob um **cabeçalho do épico** (progresso e os **temas/tags** daquele épico), com barra guarda-chuva do início ao término do épico na timeline.
+- **Dependências e marcos** no Gantt: vínculo "termina para começar" desenhado com seta entre as barras (tracejada em vermelho quando a sucessora começa antes da anterior terminar) e marcos como losango. Um **"Como funciona"** ao lado do próprio interruptor abre a ajuda com o passo a passo e a leitura das cores.
 - **Personas** (nome, cargo, cor) atribuíveis às tarefas, com **avatar** nos cards.
 - **Visão Equipe**: carga de trabalho e desempenho por pessoa.
 
@@ -49,6 +52,7 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Relatórios**: KPIs e gráficos (concluídas por semana, pendentes por criticidade, tarefas por tag).
 - **Arquivados**: histórico das tarefas arquivadas, com colunas de **finalização** e arquivamento, seleção em massa e filtros por criticidade, tag, **mês e ano** de arquivamento.
 - **Filtros** por texto, tag e criticidade; contador de tarefas **atrasadas** na barra lateral.
+- **Busca completa**: procura em título, descrição, tags, subtarefas, comentários, anexos, projeto, épico e responsável — cada palavra digitada precisa aparecer em algum desses campos. A caixa do topo ainda avisa quando o que você procura está nas **arquivadas** ou na **lixeira**.
 
 ### Produtividade
 - **Command Palette** (`Ctrl/Cmd + K`): busque ações e tarefas, e **crie tarefas em linguagem natural** ("pagar boleto amanhã 14h #casa !alta").
@@ -56,7 +60,7 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Atalhos de teclado** com guia acessível pelo header ou tecla `?`; menu do app no logo.
 - **Gerenciador de tags**: crie tags e edite suas cores, com **escopo global ou por projeto** — tag de projeto não polui o contexto dos outros.
 - **Subtarefas no card**: clique no contador para abrir o checklist e marcar sem abrir a tarefa.
-- **Menu do botão direito** sobre a tarefa: **quick add de subtarefa** (Enter cria e o menu segue aberto para encadear várias), além de ver, editar, concluir, comentar, lembretes e excluir.
+- **Menu do botão direito** sobre a tarefa: **quick add de subtarefa** (Enter cria e o menu segue aberto para encadear várias), além de ver, editar, concluir, comentar, **arquivar** (só nas finalizadas), salvar como modelo, lembretes e excluir.
 - **Mini calendário** semanal com atalho "Ir até hoje".
 
 ### Sistema (Configurações)
@@ -64,7 +68,10 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Iniciar com o Windows** e **Iniciar minimizado**.
 - **Fechar para a bandeja** (opcional): o X esconde na bandeja ou fecha o app.
 - **Bandeja do sistema** com menu (Abrir, Verificar atualizações, Sair).
-- **Backup**: exporte e importe todos os dados em JSON; acesso rápido à pasta do banco de dados.
+- **Captura rápida global**: `Ctrl+Shift+Espaço` (configurável) abre uma caixa por cima de qualquer programa para criar tarefa em linguagem natural, sem trazer a janela para frente.
+- **Backup automático**: uma cópia por dia na pasta que você escolher, com rotação das N últimas e restauração pela própria tela. Detecta **OneDrive** e **Google Drive** e oferece a pasta com um clique — o serviço de nuvem cuida de levar o arquivo para fora do PC.
+- **Backup manual**: exporte e importe todos os dados em JSON (tarefas, tags, projetos, épicos, personas e modelos); acesso rápido à pasta do banco de dados.
+- **Anexos em disco**: imagens e arquivos ficam em `userData/attachments` em vez de inchar o banco — anexos antigos são migrados sozinhos na primeira abertura.
 - **Atualizações automáticas** via GitHub Releases (electron-updater).
 - **Reportar bug** direto por e-mail e tela "Sobre" com versão e repositório.
 

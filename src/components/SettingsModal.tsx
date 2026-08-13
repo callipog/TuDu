@@ -6,9 +6,48 @@ import { backupService } from '../services/backup';
 import { taskService } from '../services/tasks';
 import { tagService } from '../services/tags';
 import { themeService, Theme } from '../services/theme';
-import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Eye, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee, Plug, Zap } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Eye, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee, Plug, Zap, Keyboard, CloudUpload, HardDrive } from 'lucide-react';
 
 type BridgeStatus = Awaited<ReturnType<NonNullable<Window['tudu']>['bridge']['status']>>;
+type CaptureConfig = Awaited<ReturnType<NonNullable<Window['tudu']>['capture']['get']>>;
+type BackupState = Awaited<ReturnType<NonNullable<Window['tudu']>['backup']['state']>>;
+
+/** Monta um acelerador do Electron ("Control+Shift+Space") a partir da tecla pressionada. */
+function acceleratorFromEvent(e: KeyboardEvent): string | null {
+  const parts: string[] = [];
+  if (e.ctrlKey) parts.push('Control');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey) parts.push('Shift');
+  if (e.metaKey) parts.push('Super');
+
+  const key = e.key;
+  if (['Control', 'Alt', 'Shift', 'Meta', 'OS'].includes(key)) return null;
+
+  let final: string;
+  if (key === ' ' || key === 'Spacebar') final = 'Space';
+  else if (key.length === 1) final = key.toUpperCase();
+  else if (/^F\d{1,2}$/.test(key)) final = key;
+  else if (['Enter', 'Tab', 'Backspace', 'Delete', 'Insert', 'Home', 'End', 'PageUp', 'PageDown', 'Escape'].includes(key)) final = key;
+  else if (key.startsWith('Arrow')) final = key.replace('Arrow', '');
+  else return null;
+
+  // Atalho global sem modificador sequestraria a tecla no sistema inteiro.
+  if (parts.length === 0) return null;
+  parts.push(final);
+  return parts.join('+');
+}
+
+/** Versão legível do acelerador, com os nomes que aparecem no teclado. */
+function formatAccelerator(accel: string): string {
+  return accel
+    .replace('Control', 'Ctrl')
+    .replace('Super', 'Win')
+    .replace('Space', 'Espaço')
+    .split('+')
+    .join(' + ');
+}
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -46,6 +85,12 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
   const [bridge, setBridge] = useState<BridgeStatus | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
+  const [capture, setCapture] = useState<CaptureConfig | null>(null);
+  const [gravandoAtalho, setGravandoAtalho] = useState(false);
+  const [backup, setBackup] = useState<BackupState | null>(null);
+  const [salvandoBackup, setSalvandoBackup] = useState(false);
+  const [backupMsg, setBackupMsg] = useState<string | null>(null);
+  const [restaurar, setRestaurar] = useState<{ name: string; size: number; at: string }[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isElectron = settingsService.isElectron();
 
@@ -114,8 +159,13 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
     if (isOpen) {
       settingsService.get().then(setSettings);
       window.tudu?.bridge.status().then(setBridge).catch(() => setBridge(null));
+      window.tudu?.capture.get().then(setCapture).catch(() => setCapture(null));
+      window.tudu?.backup.state().then(setBackup).catch(() => setBackup(null));
+      setRestaurar(null);
+      setBackupMsg(null);
       setCopied(false);
       setShowToken(false);
+      setGravandoAtalho(false);
       setTheme(themeService.get());
     }
   }, [isOpen]);
@@ -144,6 +194,81 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
       setTimeout(() => setCopied(false), 1500);
     }
   }
+
+  async function salvarBackup(patch: { enabled?: boolean; dir?: string; keep?: number }) {
+    const result = await window.tudu?.backup.set(patch);
+    if (result) setBackup(result);
+  }
+
+  const toggleAutoBackup = (v: boolean) => salvarBackup({ enabled: v });
+
+  async function escolherPastaBackup() {
+    const result = await window.tudu?.backup.chooseDir();
+    if (result) setBackup(result);
+  }
+
+  /** Pasta vazia = volta para a padrão do app (userData/backups). */
+  async function definirPastaBackup(dir: string) {
+    if (!dir) {
+      const s = await window.tudu?.settings.get();
+      if (s) await salvarBackup({ dir: `${s.userDataPath}\\backups` });
+      return;
+    }
+    await salvarBackup({ dir });
+  }
+
+  async function backupAgora() {
+    setSalvandoBackup(true);
+    setBackupMsg(null);
+    const ok = await backupService.runAutoBackupIfDue(true);
+    const state = await window.tudu?.backup.state();
+    if (state) setBackup(state);
+    setSalvandoBackup(false);
+    setBackupMsg(ok ? 'Cópia criada.' : 'Não foi possível criar a cópia.');
+    setTimeout(() => setBackupMsg(null), 4000);
+  }
+
+  async function abrirRestauracao() {
+    if (restaurar) { setRestaurar(null); return; }
+    const lista = await window.tudu?.backup.list();
+    setRestaurar(lista ?? []);
+  }
+
+  async function restaurarCopia(name: string) {
+    if (!window.confirm('Restaurar esta cópia? As tarefas com o mesmo id serão sobrescritas; as demais são mantidas.')) return;
+    const texto = await window.tudu?.backup.read(name);
+    if (!texto) { setBackupMsg('Não foi possível ler a cópia.'); return; }
+    try {
+      const result = await backupService.importJson(texto);
+      setBackupMsg(`Restaurado: ${result.tasks} tarefa(s).`);
+      setRestaurar(null);
+      onDataImported();
+    } catch (err: any) {
+      setBackupMsg(err.message || 'Falha ao restaurar.');
+    }
+  }
+
+  async function toggleCapture(v: boolean) {
+    const result = await window.tudu?.capture.set({ enabled: v });
+    if (result) setCapture(result);
+    setGravandoAtalho(false);
+  }
+
+  // Grava a próxima combinação pressionada como atalho global.
+  useEffect(() => {
+    if (!gravandoAtalho) return;
+    function onKey(e: KeyboardEvent) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Escape') { setGravandoAtalho(false); return; }
+      const accel = acceleratorFromEvent(e);
+      if (!accel) return; // só modificadores: segue esperando a tecla final
+      setGravandoAtalho(false);
+      window.tudu?.capture.set({ accelerator: accel }).then(r => { if (r) setCapture(r); });
+    }
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [gravandoAtalho]);
 
   const sectionTitle = 'text-[10px] uppercase font-bold text-zinc-500 tracking-wider mb-2';
 
@@ -209,6 +334,169 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
               label="Fechar para a bandeja"
               hint="Ao clicar no X, esconde na bandeja. Se desativado, o X fecha o app por completo."
             />
+          </div>
+        </div>
+
+        {/* Captura rápida */}
+        <div>
+          <p className={sectionTitle}>Captura rápida</p>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 divide-y divide-white/5">
+            <CheckRow
+              checked={!!capture?.enabled}
+              onChange={toggleCapture}
+              disabled={!isElectron}
+              icon={<Zap size={15} />}
+              label="Atalho global para criar tarefa"
+              hint="Abre uma caixa por cima de qualquer programa. Aceita data, #tag e !criticidade."
+            />
+            <div className="py-3 flex items-center gap-3">
+              <span className="text-zinc-400 shrink-0"><Keyboard size={15} /></span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-white">Combinação</p>
+                <p className="text-[11px] text-zinc-500">
+                  {gravandoAtalho
+                    ? 'Pressione a combinação desejada…'
+                    : capture && !capture.registered && capture.enabled
+                      ? 'Outro programa já usa este atalho. Escolha outra combinação.'
+                      : 'Clique em Alterar e pressione as teclas.'}
+                </p>
+              </div>
+              <kbd className={`shrink-0 text-[11px] font-mono px-2 py-1 rounded-md border ${
+                gravandoAtalho
+                  ? 'border-indigo-500 text-indigo-300 bg-indigo-500/10'
+                  : capture?.enabled && !capture?.registered
+                    ? 'border-rose-500/40 text-rose-300 bg-rose-500/10'
+                    : 'border-white/10 text-zinc-300 bg-black/40'
+              }`}>
+                {formatAccelerator(capture?.accelerator ?? '—')}
+              </kbd>
+              <button
+                onClick={() => setGravandoAtalho(v => !v)}
+                disabled={!isElectron || !capture?.enabled}
+                className="shrink-0 text-xs font-medium text-zinc-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+              >
+                {gravandoAtalho ? 'Cancelar' : 'Alterar'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Backup automático */}
+        <div>
+          <p className={sectionTitle}>Backup automático</p>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4">
+            <CheckRow
+              checked={!!backup?.enabled}
+              onChange={toggleAutoBackup}
+              disabled={!isElectron}
+              icon={<CloudUpload size={15} />}
+              label="Fazer uma cópia por dia"
+              hint={backup?.lastAt
+                ? `Última cópia em ${format(parseISO(backup.lastAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} · ${backup.count} guardada(s)`
+                : 'Nenhuma cópia feita ainda.'}
+            />
+            <div className="py-3 border-t border-white/5 space-y-2">
+              <div className="flex items-center gap-2">
+                <code className="flex-1 min-w-0 text-[11px] text-zinc-300 bg-black/40 border border-white/10 rounded-lg px-3 py-2 truncate" title={backup?.dir}>
+                  {backup?.dir ?? '—'}
+                </code>
+                <button
+                  onClick={escolherPastaBackup}
+                  disabled={!isElectron}
+                  title="Escolher pasta"
+                  className="shrink-0 p-2 rounded-lg text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-40"
+                >
+                  <FolderOpen size={15} />
+                </button>
+              </div>
+
+              {/* Atalhos para as pastas de nuvem que existem nesta máquina:
+                  o próprio OneDrive/Drive leva o arquivo para fora do PC. */}
+              {(backup?.clouds.length ?? 0) > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] text-zinc-500">Usar:</span>
+                  {backup!.clouds.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => definirPastaBackup(c.dir)}
+                      title={c.dir}
+                      className={`flex items-center gap-1.5 text-[11px] font-medium px-2 py-1 rounded-md border transition-colors ${
+                        backup?.dir === c.dir
+                          ? 'bg-indigo-600 border-indigo-600 text-white'
+                          : 'text-zinc-300 bg-white/5 hover:bg-white/10 border-white/10'
+                      }`}
+                    >
+                      <CloudUpload size={12} /> {c.label}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => definirPastaBackup('')}
+                    title="Voltar para a pasta padrão do app"
+                    className="flex items-center gap-1.5 text-[11px] font-medium px-2 py-1 rounded-md border text-zinc-400 bg-white/5 hover:bg-white/10 border-white/10 transition-colors"
+                  >
+                    <HardDrive size={12} /> Local
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] text-zinc-500 flex-1">Cópias guardadas</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={backup?.keep ?? 7}
+                  onChange={(e) => salvarBackup({ keep: Number(e.target.value) })}
+                  disabled={!isElectron}
+                  className="w-16 bg-[#18181b] border border-white/10 rounded-lg px-2 py-1 text-xs text-white text-center focus:outline-none focus:border-indigo-500 disabled:opacity-40"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <button
+                  onClick={backupAgora}
+                  disabled={!isElectron || salvandoBackup}
+                  className="flex items-center justify-center gap-1.5 text-xs font-medium text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg py-2 transition-colors disabled:opacity-40"
+                >
+                  <CloudUpload size={14} /> {salvandoBackup ? 'Salvando…' : 'Copiar agora'}
+                </button>
+                <button
+                  onClick={() => window.tudu?.backup.openDir()}
+                  disabled={!isElectron}
+                  className="flex items-center justify-center gap-1.5 text-xs font-medium text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg py-2 transition-colors disabled:opacity-40"
+                >
+                  <FolderOpen size={14} /> Abrir
+                </button>
+                <button
+                  onClick={abrirRestauracao}
+                  disabled={!isElectron}
+                  className="flex items-center justify-center gap-1.5 text-xs font-medium text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg py-2 transition-colors disabled:opacity-40"
+                >
+                  <RefreshCw size={14} /> Restaurar
+                </button>
+              </div>
+
+              {/* Lista das cópias da pasta, para restaurar sem procurar arquivo. */}
+              {restaurar && (
+                <div className="rounded-lg border border-white/10 bg-black/30 divide-y divide-white/5 max-h-40 overflow-y-auto custom-scrollbar">
+                  {restaurar.length === 0 ? (
+                    <p className="text-[11px] text-zinc-500 px-3 py-2">Nenhuma cópia nesta pasta ainda.</p>
+                  ) : restaurar.map(item => (
+                    <button
+                      key={item.name}
+                      onClick={() => restaurarCopia(item.name)}
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-white/5 transition-colors"
+                    >
+                      <span className="text-[11px] text-zinc-300 truncate">
+                        {format(parseISO(item.at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      </span>
+                      <span className="text-[10px] text-zinc-500 shrink-0">{Math.round(item.size / 1024)} KB</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {backupMsg && <p className="text-[11px] text-emerald-400">{backupMsg}</p>}
+            </div>
           </div>
         </div>
 

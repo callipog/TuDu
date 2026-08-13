@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Task, Project } from '../types';
 import { Theme } from '../services/theme';
 import { parseQuickAdd } from '../services/quickAdd';
+import { taskMatches } from '../services/search';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -101,7 +102,7 @@ export function CommandPalette({ isOpen, onClose, tasks, projects, onNavigate, o
   const taskResults = useMemo(() => {
     if (!q) return [];
     return tasks
-      .filter(t => t.title.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q))
+      .filter(t => taskMatches(t, q))
       .slice(0, 6);
   }, [tasks, q]);
 

@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Task, Urgency, TaskStatus } from '../types';
 import { StatusColor } from '../services/boards';
 import { tagService } from '../services/tags';
+import { taskMatches } from '../services/search';
 import { format, parseISO, isPast } from 'date-fns';
 import { Search, Pencil, Eye, Check, Bell, Repeat, ListChecks, ChevronUp, ChevronDown, Save, Trash2, Star } from 'lucide-react';
 
@@ -72,10 +73,7 @@ export function TaskListView({ tasks, onView, onEdit, onToggle, onContext, statu
 
   const filtered = useMemo(() => {
     const list = tasks.filter(t => {
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        if (!t.title.toLowerCase().includes(q) && !(t.description || '').toLowerCase().includes(q)) return false;
-      }
+      if (search.trim() && !taskMatches(t, search)) return false;
       if (urgencyFilter !== 'all' && t.urgency !== urgencyFilter) return false;
       if (statusFilter !== 'all' && statusOf(t) !== statusFilter) return false;
       if (tagFilter !== 'all' && !t.tags.includes(tagFilter)) return false;

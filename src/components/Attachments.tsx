@@ -1,9 +1,11 @@
 import React, { useRef, useState } from 'react';
 import { Attachment } from '../types';
+import { attachmentService } from '../services/attachments';
 import { Link2, Code2, Image as ImageIcon, FileText, Paperclip, Plus, X, ExternalLink, Download } from 'lucide-react';
 
-const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // 3MB
-const MAX_FILE_BYTES = 8 * 1024 * 1024;  // 8MB
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // 3MB (sem disco: vai como dataURL no banco)
+const MAX_FILE_BYTES = 8 * 1024 * 1024;  // 8MB (idem)
+const MAX_DISK_BYTES = 50 * 1024 * 1024; // 50MB quando grava em arquivo
 
 /** Linguagens oferecidas no seletor ao anexar um trecho de código. */
 const CODE_LANGUAGES = [
@@ -36,7 +38,7 @@ function AttachmentRow({ a, onRemove }: { key?: React.Key; a: Attachment; onRemo
           {a.type === 'link'
             ? <a href={a.content} target="_blank" rel="noopener noreferrer" onClick={openLink(a.content)} className="flex items-center gap-1 hover:text-indigo-300 transition-colors truncate">{a.title || a.content} <ExternalLink size={11} className="shrink-0" /></a>
             : a.type === 'file'
-            ? <a href={a.content} download={a.title || 'arquivo'} className="flex items-center gap-1 hover:text-sky-300 transition-colors truncate">{a.title || 'Arquivo'} <Download size={11} className="shrink-0" /></a>
+            ? <a href={attachmentService.src(a)} download={a.title || 'arquivo'} className="flex items-center gap-1 hover:text-sky-300 transition-colors truncate">{a.title || 'Arquivo'} <Download size={11} className="shrink-0" /></a>
             : (a.title || (a.type === 'code' ? 'Trecho de código' : 'Imagem'))}
         </span>
         {onRemove && (
@@ -47,7 +49,7 @@ function AttachmentRow({ a, onRemove }: { key?: React.Key; a: Attachment; onRemo
         <pre className="custom-scrollbar text-[11px] text-zinc-300 bg-black/40 px-3 py-2 overflow-auto max-h-40 border-t border-white/5"><code>{a.content}</code></pre>
       )}
       {a.type === 'image' && (
-        <img src={a.content} alt={a.title || 'anexo'} className="max-h-48 w-full object-contain bg-black/40 border-t border-white/5" />
+        <img src={attachmentService.src(a)} alt={a.title || 'anexo'} className="max-h-48 w-full object-contain bg-black/40 border-t border-white/5" />
       )}
     </div>
   );
@@ -73,6 +75,12 @@ export function AttachmentsEditor({ value, onChange }: { value: Attachment[]; on
   const fileRef = useRef<HTMLInputElement>(null);
 
   const add = (a: Attachment) => onChange([...value, a]);
+
+  // Remover o anexo apaga também o arquivo em disco, senão ele fica órfão.
+  const removeAt = (a: Attachment) => {
+    attachmentService.discard(a);
+    remove(a.id);
+  };
   const remove = (id: string) => onChange(value.filter(x => x.id !== id));
 
   const addLink = () => {
@@ -86,24 +94,23 @@ export function AttachmentsEditor({ value, onChange }: { value: Attachment[]; on
     setShowLink(false);
   };
 
-  const onImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
-    if (f.size > MAX_IMAGE_BYTES) { window.alert('Imagem muito grande (máximo 3MB).'); return; }
-    const r = new FileReader();
-    r.onload = () => add({ id: crypto.randomUUID(), type: 'image', content: String(r.result), title: f.name });
-    r.readAsDataURL(f);
+    // Em disco o limite pode ser bem maior: o peso não entra mais no banco.
+    const limite = attachmentService.canUseDisk() ? MAX_DISK_BYTES : MAX_IMAGE_BYTES;
+    if (f.size > limite) { window.alert(`Imagem muito grande (máximo ${Math.round(limite / 1024 / 1024)}MB).`); return; }
+    add(await attachmentService.fromFile(f, 'image'));
   };
 
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
-    if (f.size > MAX_FILE_BYTES) { window.alert('Arquivo muito grande (máximo 8MB).'); return; }
-    const r = new FileReader();
-    r.onload = () => add({ id: crypto.randomUUID(), type: 'file', content: String(r.result), title: f.name, mime: f.type });
-    r.readAsDataURL(f);
+    const limite = attachmentService.canUseDisk() ? MAX_DISK_BYTES : MAX_FILE_BYTES;
+    if (f.size > limite) { window.alert(`Arquivo muito grande (máximo ${Math.round(limite / 1024 / 1024)}MB).`); return; }
+    add(await attachmentService.fromFile(f, 'file'));
   };
 
   const addCode = () => {
@@ -121,7 +128,7 @@ export function AttachmentsEditor({ value, onChange }: { value: Attachment[]; on
     <div>
       {value.length > 0 && (
         <div className="space-y-2 mb-2">
-          {value.map(a => <AttachmentRow key={a.id} a={a} onRemove={() => remove(a.id)} />)}
+          {value.map(a => <AttachmentRow key={a.id} a={a} onRemove={() => removeAt(a)} />)}
         </div>
       )}
       <div className="flex flex-wrap gap-2">

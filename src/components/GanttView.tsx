@@ -7,6 +7,7 @@ import {
   format, isToday, getISOWeek
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { Diamond, Link2 } from 'lucide-react';
 
 interface GanttViewProps {
   tasks: Task[];
@@ -138,6 +139,70 @@ export function GanttView({ tasks, epics, statusLabel, statusColor, onSelect }: 
   const timelineWidth = days.length * DAY_W;
   const cellHead = 'flex items-center px-2 text-[10px] uppercase font-bold tracking-wider text-zinc-500';
 
+  /* ---- Dependências (termina-para-começar) --------------------------------
+     Cada vínculo vira uma seta ligando o fim da predecessora ao início da
+     sucessora. Quando a sucessora começa ANTES da predecessora terminar, o
+     vínculo está violado — é o que a cor de alerta mostra. */
+
+  // Número da linha de cada tarefa (o "ID" da tabela), para citar dependências.
+  const numeroPorId = useMemo(() => {
+    const map = new Map<string, number>();
+    rows.forEach(row => { if (row.kind === 'task') map.set(row.task.id, row.n); });
+    return map;
+  }, [rows]);
+
+  // Posição vertical de cada linha, para desenhar as setas por cima da grade.
+  const rowTops = useMemo(() => {
+    const map = new Map<string, number>();
+    let y = 0;
+    rows.forEach(row => {
+      if (row.kind === 'group') { y += GROUP_H; return; }
+      map.set(row.task.id, y);
+      y += ROW_H;
+    });
+    return map;
+  }, [rows]);
+
+  const totalHeight = useMemo(
+    () => rows.reduce((h, row) => h + (row.kind === 'group' ? GROUP_H : ROW_H), 0),
+    [rows]
+  );
+
+  const links = useMemo(() => {
+    const porId = new Map(tasks.map(t => [t.id, t]));
+    const saida: { id: string; d: string; violado: boolean; titulo: string }[] = [];
+
+    rows.forEach(row => {
+      if (row.kind !== 'task') return;
+      const alvo = row.task;
+      const yAlvo = rowTops.get(alvo.id);
+      const barAlvo = barFor(alvo);
+      if (yAlvo === undefined || !barAlvo) return;
+
+      (alvo.dependsOn ?? []).forEach(depId => {
+        const dep = porId.get(depId);
+        const yDep = rowTops.get(depId);
+        const barDep = dep ? barFor(dep) : null;
+        if (!dep || yDep === undefined || !barDep) return;
+
+        const x1 = barDep.left + barDep.width - 2;
+        const y1 = yDep + ROW_H / 2;
+        const x2 = barAlvo.left + 2;
+        const y2 = yAlvo + ROW_H / 2;
+        const meio = x2 > x1 + 16 ? x1 + (x2 - x1) / 2 : x1 + 12;
+
+        saida.push({
+          id: `${depId}->${alvo.id}`,
+          // Cotovelo: sai da direita da predecessora e entra pela esquerda da sucessora.
+          d: `M ${x1} ${y1} H ${meio} V ${y2} H ${x2}`,
+          violado: x2 < x1,
+          titulo: `${dep.title} → ${alvo.title}`,
+        });
+      });
+    });
+    return saida;
+  }, [rows, rowTops, tasks, rangeStart]);
+
   if (tasks.length === 0) {
     return <p className="text-sm text-zinc-500 italic py-10 text-center">Nenhuma tarefa neste projeto para exibir no Gantt.</p>;
   }
@@ -195,7 +260,18 @@ export function GanttView({ tasks, epics, statusLabel, statusColor, onSelect }: 
                 style={{ gridTemplateColumns: GRID, height: ROW_H }}
               >
                 <span className="px-2 text-[11px] font-mono text-zinc-600">{row.n}</span>
-                <span className={`px-2 text-sm truncate ${t.completed ? 'line-through text-zinc-500' : 'text-white'}`}>{t.title}</span>
+                <span className={`px-2 text-sm truncate flex items-center gap-1.5 ${t.completed ? 'line-through text-zinc-500' : 'text-white'}`}>
+                  {t.milestone && <Diamond size={11} className="shrink-0 text-amber-400 fill-amber-400" />}
+                  <span className="truncate">{t.title}</span>
+                  {(t.dependsOn?.length ?? 0) > 0 && (
+                    <span
+                      className="shrink-0 flex items-center gap-0.5 text-[10px] font-mono text-indigo-300/80"
+                      title={`Depende de: ${(t.dependsOn ?? []).map(id => numeroPorId.get(id) ?? '?').join(', ')}`}
+                    >
+                      <Link2 size={10} />{(t.dependsOn ?? []).map(id => numeroPorId.get(id) ?? '?').join(',')}
+                    </span>
+                  )}
+                </span>
                 <span className="px-2 text-xs text-zinc-400">{t.startDate ? format(parseISO(t.startDate), 'dd/MM/yy') : '—'}</span>
                 <span className="px-2 text-xs text-zinc-400">{t.dueDate ? format(parseISO(t.dueDate), 'dd/MM/yy') : '—'}</span>
                 <span className="px-2 flex items-center gap-1.5 text-xs text-zinc-400 truncate">
@@ -280,7 +356,16 @@ export function GanttView({ tasks, epics, statusLabel, statusColor, onSelect }: 
                 className="relative border-b border-white/5 cursor-pointer hover:bg-white/[0.02]"
                 style={{ height: ROW_H, backgroundImage: grid }}
               >
-                {b && (
+                {b && (t.milestone ? (
+                  // Marco: data única, sem duração — losango em vez de barra.
+                  <div
+                    title={`${t.title} · marco`}
+                    className={`absolute top-1/2 w-3.5 h-3.5 rotate-45 border ${
+                      t.completed ? 'bg-emerald-500 border-emerald-300 opacity-60' : 'bg-amber-400 border-amber-200'
+                    }`}
+                    style={{ left: b.left + DAY_W / 2 - 7, marginTop: -7 }}
+                  />
+                ) : (
                   <div
                     title={`${t.title} · ${statusLabel(t)}`}
                     className={`absolute top-1/2 -translate-y-1/2 h-6 rounded-md flex items-center px-2 overflow-hidden shadow-sm ${statusColor(t).bar} ${t.completed ? 'opacity-50' : ''}`}
@@ -288,10 +373,42 @@ export function GanttView({ tasks, epics, statusLabel, statusColor, onSelect }: 
                   >
                     <span className="text-[10px] font-medium text-white truncate">{t.title}</span>
                   </div>
-                )}
+                ))}
               </div>
             );
           })}
+
+          {/* Setas das dependências, por cima das linhas. */}
+          {links.length > 0 && (
+            <svg
+              className="absolute left-0 pointer-events-none"
+              style={{ top: HEADER_H, width: timelineWidth, height: totalHeight }}
+              width={timelineWidth}
+              height={totalHeight}
+            >
+              <defs>
+                <marker id="gantt-seta" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+                  <path d="M0,0 L7,3.5 L0,7 z" fill="rgb(129 140 248)" />
+                </marker>
+                <marker id="gantt-seta-alerta" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+                  <path d="M0,0 L7,3.5 L0,7 z" fill="rgb(251 113 133)" />
+                </marker>
+              </defs>
+              {links.map(l => (
+                <path
+                  key={l.id}
+                  d={l.d}
+                  fill="none"
+                  strokeWidth={1.5}
+                  stroke={l.violado ? 'rgb(251 113 133)' : 'rgb(129 140 248)'}
+                  strokeDasharray={l.violado ? '4 3' : undefined}
+                  markerEnd={`url(#${l.violado ? 'gantt-seta-alerta' : 'gantt-seta'})`}
+                >
+                  <title>{l.titulo}{l.violado ? ' · começa antes da anterior terminar' : ''}</title>
+                </path>
+              ))}
+            </svg>
+          )}
         </div>
       </div>
     </div>

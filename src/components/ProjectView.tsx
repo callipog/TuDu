@@ -7,13 +7,15 @@ import { projectService } from '../services/projects';
 import { Avatar } from './Avatar';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Settings2, CalendarRange, LayoutGrid, GanttChartSquare } from 'lucide-react';
+import { Settings2, CalendarRange, LayoutGrid, GanttChartSquare, FileStack } from 'lucide-react';
 
 interface ProjectViewProps {
   project: Project;
   epics: Epic[];
   tasks: Task[]; // tarefas ativas do projeto
   onEditProject: () => void;
+  /** Guarda o projeto (épicos + tarefas) como modelo. */
+  onSaveTemplate: () => void;
   onToggleTask: (task: Task) => void;
   onToggleSubtask?: (task: Task, subtaskId: string) => void;
   onClickTask: (task: Task) => void;
@@ -28,7 +30,7 @@ interface ProjectViewProps {
   statusColor: (task: Task) => StatusColor;
 }
 
-export function ProjectView({ project, epics, tasks, onEditProject, statusLabel, statusColor, ...board }: ProjectViewProps) {
+export function ProjectView({ project, epics, tasks, onEditProject, onSaveTemplate, statusLabel, statusColor, ...board }: ProjectViewProps) {
   const [epicFilter, setEpicFilter] = useState<string>('all'); // 'all' | epicId | 'none'
   const [mode, setMode] = useState<'kanban' | 'gantt'>('kanban');
 
@@ -97,6 +99,10 @@ export function ProjectView({ project, epics, tasks, onEditProject, statusLabel,
                 <GanttChartSquare size={14} /> Gantt
               </button>
             </div>
+            <button onClick={onSaveTemplate} title="Salvar este projeto como modelo"
+              className="flex items-center gap-2 text-sm font-medium text-zinc-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 transition-colors">
+              <FileStack size={15} /> Modelo
+            </button>
             <button onClick={onEditProject} title="Editar este projeto"
               className="flex items-center gap-2 text-sm font-medium text-zinc-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 transition-colors">
               <Settings2 size={15} /> Editar projeto

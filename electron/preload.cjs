@@ -40,6 +40,37 @@ contextBridge.exposeInMainWorld('tudu', {
     },
   },
 
+  // Anexos gravados em disco (fora do banco).
+  files: {
+    save: (payload) => ipcRenderer.invoke('files:save', payload),
+    remove: (name) => ipcRenderer.invoke('files:delete', String(name ?? '')),
+    prune: (used) => ipcRenderer.invoke('files:prune', used),
+  },
+
+  // Backup em pasta (serve OneDrive/Google Drive): o renderer monta o JSON,
+  // o processo principal grava e faz a rotação das cópias.
+  backup: {
+    state: () => ipcRenderer.invoke('backup:state'),
+    set: (options) => ipcRenderer.invoke('backup:set', options),
+    chooseDir: () => ipcRenderer.invoke('backup:choose-dir'),
+    write: (json) => ipcRenderer.invoke('backup:write', String(json ?? '')),
+    openDir: () => ipcRenderer.invoke('backup:open-dir'),
+    list: () => ipcRenderer.invoke('backup:list'),
+    read: (name) => ipcRenderer.invoke('backup:read', String(name ?? '')),
+  },
+
+  // Captura rápida: a janelinha manda o texto, o app grava e confirma.
+  capture: {
+    get: () => ipcRenderer.invoke('capture:get'),
+    set: (options) => ipcRenderer.invoke('capture:set', options),
+    saved: (title) => ipcRenderer.send('capture:saved', String(title ?? '')),
+    onText: (cb) => {
+      const h = (_e, text) => cb(text);
+      ipcRenderer.on('capture:text', h);
+      return () => ipcRenderer.removeListener('capture:text', h);
+    },
+  },
+
   updates: {
     install: () => ipcRenderer.invoke('update:install'),
     onProgress: (cb) => {

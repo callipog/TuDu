@@ -8,6 +8,8 @@ interface PomodoroModalProps {
   isOpen: boolean;
   onClose: () => void;
   tasks: Task[]; // ativas e não concluídas, para escolher o foco
+  /** Lança o tempo do bloco na tarefa em foco (só blocos de trabalho). */
+  onLogTime?: (taskId: string, minutes: number) => void;
 }
 
 const WORK = 25 * 60;
@@ -23,7 +25,7 @@ function fmt(s: number) {
 
 // Estado mantido no componente, que fica sempre montado no App — o timer
 // continua rodando mesmo com o modal fechado.
-export function PomodoroModal({ isOpen, onClose, tasks }: PomodoroModalProps) {
+export function PomodoroModal({ isOpen, onClose, tasks, onLogTime }: PomodoroModalProps) {
   const [mode, setMode] = useState<'work' | 'break'>('work');
   const [secondsLeft, setSecondsLeft] = useState(WORK);
   const [running, setRunning] = useState(false);
@@ -39,7 +41,11 @@ export function PomodoroModal({ isOpen, onClose, tasks }: PomodoroModalProps) {
   useEffect(() => {
     if (secondsLeft > 0) return;
     const wasWork = mode === 'work';
-    if (wasWork) setCycles(c => c + 1);
+    if (wasWork) {
+      setCycles(c => c + 1);
+      // Bloco de foco concluído vira apontamento na tarefa escolhida.
+      if (focusId) onLogTime?.(focusId, Math.round(WORK / 60));
+    }
     notificationService.notify(
       'Pomodoro · TuDu',
       wasWork ? 'Bloco concluído! Faça uma pausa de 5 minutos.' : 'Pausa encerrada. Hora de focar!'

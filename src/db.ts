@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import { Task, Tag, Project, Epic, Persona } from './types';
+import { Task, Tag, Project, Epic, Persona, Template } from './types';
 
 // Create the database
 const db = new Dexie('FocusDeskDatabase') as Dexie & {
@@ -8,6 +8,7 @@ const db = new Dexie('FocusDeskDatabase') as Dexie & {
   projects: EntityTable<Project, 'id'>;
   epics: EntityTable<Epic, 'id'>;
   personas: EntityTable<Persona, 'id'>;
+  templates: EntityTable<Template, 'id'>;
 };
 
 // Schema declaration
@@ -70,6 +71,16 @@ db.version(5).stores({
       await tx.table('epics').update(list[i].id, { order: i });
     }
   }
+});
+
+// v6: modelos (templates) de tarefa e de projeto.
+db.version(6).stores({
+  tasks: 'id, title, urgency, completed, createdAt, status, archived, deleted, order, projectId, epicId, assigneeId',
+  tags: 'id, name',
+  projects: 'id, name, status, archived, createdAt',
+  epics: 'id, projectId, order, createdAt',
+  personas: 'id, name, createdAt',
+  templates: 'id, kind, name, createdAt'
 });
 
 export { db };

@@ -1,9 +1,10 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Task, Urgency } from '../types';
 import { tagService } from '../services/tags';
+import { taskMatches } from '../services/search';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Archive, ArchiveRestore, Search, Check, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, Search, Check, Trash2, ChevronDown, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 
 interface ArchivedViewProps {
   tasks: Task[];
@@ -25,6 +26,17 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => {
   return nome.charAt(0).toUpperCase() + nome.slice(1);
 });
 
+/**
+ * Data que representa a tarefa no arquivo: quando ela foi FINALIZADA.
+ * O arquivamento costuma ser um gesto em lote ("Arquivar tudo"), então
+ * agruparia coisas sem relação no mês em que o botão foi clicado; a criação
+ * joga tarefa longa para o mês em que ela nasceu. Sem `completedAt`
+ * (tarefas antigas), cai para o arquivamento e, por fim, para a criação.
+ */
+function refDate(task: Task): string {
+  return task.completedAt || task.archivedAt || task.createdAt;
+}
+
 function Box({ checked, onClick, title }: { checked: boolean; onClick: (e: React.MouseEvent) => void; title?: string }) {
   return (
     <button
@@ -44,6 +56,7 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
   const [monthFilter, setMonthFilter] = useState<string>('all'); // '0'..'11'
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -54,29 +67,56 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
   // Anos presentes no arquivo (mais recentes primeiro).
   const allYears = useMemo(() => {
     const set = new Set<number>();
-    tasks.forEach(t => { if (t.archivedAt) set.add(parseISO(t.archivedAt).getFullYear()); });
+    tasks.forEach(t => set.add(parseISO(refDate(t)).getFullYear()));
     return [...set].sort((a, b) => b - a);
   }, [tasks]);
 
   const filtered = useMemo(() => {
     return tasks
       .filter(t => {
-        if (search.trim()) {
-          const q = search.toLowerCase();
-          if (!t.title.toLowerCase().includes(q) && !(t.description || '').toLowerCase().includes(q)) return false;
-        }
+        if (search.trim() && !taskMatches(t, search)) return false;
         if (urgencyFilter !== 'all' && t.urgency !== urgencyFilter) return false;
         if (tagFilter !== 'all' && !t.tags.includes(tagFilter)) return false;
         if (monthFilter !== 'all' || yearFilter !== 'all') {
-          if (!t.archivedAt) return false; // sem data de arquivamento não entra no recorte
-          const d = parseISO(t.archivedAt);
+          const d = parseISO(refDate(t));
           if (monthFilter !== 'all' && d.getMonth() !== Number(monthFilter)) return false;
           if (yearFilter !== 'all' && d.getFullYear() !== Number(yearFilter)) return false;
         }
         return true;
       })
-      .sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
+      .sort((a, b) => refDate(b).localeCompare(refDate(a)));
   }, [tasks, search, urgencyFilter, tagFilter, monthFilter, yearFilter]);
+
+  // Agrupamento por mês/ano da conclusão, do mais recente para o mais antigo.
+  const groups = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    filtered.forEach(t => {
+      const key = format(parseISO(refDate(t)), 'yyyy-MM');
+      const list = map.get(key);
+      if (list) list.push(t);
+      else map.set(key, [t]);
+    });
+    return [...map.entries()]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([key, itens]) => {
+        const label = format(parseISO(refDate(itens[0])), "MMMM 'de' yyyy", { locale: ptBR });
+        return { key, label: label.charAt(0).toUpperCase() + label.slice(1), itens };
+      });
+  }, [filtered]);
+
+  const todosRecolhidos = groups.length > 0 && groups.every(g => collapsed.has(g.key));
+
+  const toggleGroup = (key: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const toggleAllGroups = () => {
+    setCollapsed(todosRecolhidos ? new Set() : new Set(groups.map(g => g.key)));
+  };
 
   // Remove da seleção ids que não existem mais.
   useEffect(() => {
@@ -144,13 +184,13 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
           ))}
         </select>
         {/* Recorte por data de arquivamento */}
-        <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className={selectClass} title="Mês em que foi arquivada">
+        <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className={selectClass} title="Mês em que a tarefa foi finalizada">
           <option value="all">Todos os meses</option>
           {MONTHS.map((label, i) => (
             <option key={label} value={String(i)}>{label}</option>
           ))}
         </select>
-        <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className={selectClass} title="Ano em que foi arquivada">
+        <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className={selectClass} title="Ano em que a tarefa foi finalizada">
           <option value="all">Todos os anos</option>
           {allYears.map(y => (
             <option key={y} value={String(y)}>{y}</option>
@@ -162,6 +202,16 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
             className="text-xs text-zinc-400 hover:text-white transition-colors"
           >
             Limpar datas
+          </button>
+        )}
+        {groups.length > 1 && (
+          <button
+            onClick={toggleAllGroups}
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors"
+            title={todosRecolhidos ? 'Expandir todos os meses' : 'Recolher todos os meses'}
+          >
+            {todosRecolhidos ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
+            {todosRecolhidos ? 'Expandir todos' : 'Recolher todos'}
           </button>
         )}
         <span className="text-xs text-zinc-500 ml-auto">{filtered.length} de {tasks.length}</span>
@@ -204,11 +254,35 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
             <span>Arquivada em</span>
             <span>Ações</span>
           </div>
-          <div className="divide-y divide-white/5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
-            {filtered.map(task => {
-              const meta = urgencyMeta[task.urgency];
-              const isSel = selected.has(task.id);
+          <div className="overflow-y-auto custom-scrollbar flex-1 min-h-0">
+            {groups.map(group => {
+              const aberto = !collapsed.has(group.key);
+              const feitas = group.itens.length;
+              const groupSel = group.itens.filter(t => selected.has(t.id)).length;
               return (
+                <div key={group.key}>
+                  {/* Cabeçalho do mês: clique recolhe/expande. */}
+                  <button
+                    onClick={() => toggleGroup(group.key)}
+                    className="sticky top-0 z-10 w-full flex items-center gap-2 px-5 py-2 bg-[#151517] border-y border-white/10 text-left hover:bg-white/[0.06] transition-colors"
+                    title={aberto ? 'Recolher este mês' : 'Expandir este mês'}
+                  >
+                    <ChevronDown size={14} className={`text-zinc-500 transition-transform ${aberto ? '' : '-rotate-90'}`} />
+                    <span className="text-xs font-bold text-white">{group.label}</span>
+                    <span className="text-[10px] font-semibold text-zinc-400 bg-white/10 px-1.5 py-0.5 rounded-full">
+                      {feitas} {feitas === 1 ? 'tarefa' : 'tarefas'}
+                    </span>
+                    {groupSel > 0 && (
+                      <span className="text-[10px] font-semibold text-indigo-300">{groupSel} selecionada(s)</span>
+                    )}
+                  </button>
+
+                  {aberto && (
+                    <div className="divide-y divide-white/5">
+                      {group.itens.map(task => {
+                        const meta = urgencyMeta[task.urgency];
+                        const isSel = selected.has(task.id);
+                        return (
                 <div
                   key={task.id}
                   onClick={() => onClickTask(task)}
@@ -262,6 +336,11 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
                       <ArchiveRestore size={13} /> Restaurar
                     </button>
                   </div>
+                </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}

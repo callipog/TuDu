@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronDown, Plus, Command, FolderKanban, Users, Tag as TagIcon, Timer, Settings, Keyboard, RefreshCw, Github } from 'lucide-react';
+import { ChevronDown, Plus, Command, FolderKanban, Users, Tag as TagIcon, Timer, Settings, Keyboard, RefreshCw, Github, FileStack } from 'lucide-react';
 
 interface AppMenuProps {
   onNewTask: () => void;
@@ -8,6 +8,7 @@ interface AppMenuProps {
   onManageProjects: () => void;
   onManagePersonas: () => void;
   onManageTags: () => void;
+  onTemplates: () => void;
   onPomodoro: () => void;
   onSettings: () => void;
   onShortcuts: () => void;
@@ -65,6 +66,7 @@ export function AppMenu(props: AppMenuProps) {
             <Item icon={<FolderKanban size={15} />} label="Gerenciar projetos" onClick={run(props.onManageProjects)} />
             <Item icon={<Users size={15} />} label="Personas da equipe" onClick={run(props.onManagePersonas)} />
             <Item icon={<TagIcon size={15} />} label="Gerenciar tags" onClick={run(props.onManageTags)} />
+            <Item icon={<FileStack size={15} />} label="Modelos" onClick={run(props.onTemplates)} />
             <Item icon={<Timer size={15} />} label="Timer de foco" onClick={run(props.onPomodoro)} />
             <div className="h-px bg-white/5 my-1.5" />
             <Item icon={<Settings size={15} />} label="Configurações" onClick={run(props.onSettings)} />

@@ -4,6 +4,7 @@ import { tagService } from '../services/tags';
 import { startOfWeek, addWeeks, isSameWeek, parseISO, isPast, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { CheckCircle2, ListTodo, AlertTriangle, TrendingUp } from 'lucide-react';
+import { formatDuracao } from './TaskDetailModal';
 
 interface StatsViewProps {
   tasks: Task[]; // não deletadas (ativas + arquivadas)
@@ -50,6 +51,26 @@ export function StatsView({ tasks }: StatsViewProps) {
   const byUrgency = urgencyMeta.map(u => ({ ...u, count: tasks.filter(t => !t.completed && t.urgency === u.id).length }));
   const maxUrg = Math.max(1, ...byUrgency.map(u => u.count));
 
+  // Previsto x realizado: entram as tarefas que têm estimativa ou apontamento.
+  const tempo = useMemo(() => {
+    const itens = tasks
+      .filter(t => (t.estimateMinutes ?? 0) > 0 || (t.spentMinutes ?? 0) > 0)
+      .map(t => ({
+        id: t.id,
+        title: t.title,
+        estimado: t.estimateMinutes ?? 0,
+        apontado: t.spentMinutes ?? 0,
+        estourou: (t.estimateMinutes ?? 0) > 0 && (t.spentMinutes ?? 0) > (t.estimateMinutes ?? 0),
+      }))
+      .sort((a, b) => b.apontado - a.apontado)
+      .slice(0, 8);
+    return {
+      itens,
+      totalEstimado: tasks.reduce((s, t) => s + (t.estimateMinutes ?? 0), 0),
+      totalApontado: tasks.reduce((s, t) => s + (t.spentMinutes ?? 0), 0),
+    };
+  }, [tasks]);
+
   // Top tags.
   const tagCounts = useMemo(() => {
     const map = new Map<string, number>();
@@ -88,6 +109,44 @@ export function StatsView({ tasks }: StatsViewProps) {
           <p className="text-[11px] text-zinc-600 mt-4">As conclusões passam a ser registradas a partir de agora.</p>
         )}
       </div>
+
+      {/* Previsto x realizado — só aparece quando há o que comparar. */}
+      {tempo.itens.length > 0 && (
+        <div className="bg-[#121214] border border-white/5 rounded-2xl p-6">
+          <h3 className="text-sm font-bold text-white mb-1">Previsto × realizado</h3>
+          <p className="text-xs text-zinc-500 mb-5">
+            {formatDuracao(tempo.totalApontado)} apontados de {formatDuracao(tempo.totalEstimado)} estimados
+            {tempo.totalEstimado > 0 && (
+              <span className={tempo.totalApontado > tempo.totalEstimado ? ' text-rose-400' : ' text-emerald-400'}>
+                {' · '}{Math.round((tempo.totalApontado / tempo.totalEstimado) * 100)}%
+              </span>
+            )}
+          </p>
+          <div className="space-y-3">
+            {tempo.itens.map(item => {
+              const escala = Math.max(item.estimado, item.apontado, 1);
+              return (
+                <div key={item.id}>
+                  <div className="flex items-center justify-between gap-3 mb-1">
+                    <span className="text-xs text-zinc-300 truncate">{item.title}</span>
+                    <span className="text-[11px] font-mono text-zinc-500 shrink-0">
+                      {formatDuracao(item.apontado)} / {item.estimado > 0 ? formatDuracao(item.estimado) : '—'}
+                    </span>
+                  </div>
+                  <div className="relative h-2.5 rounded-full bg-white/5 overflow-hidden">
+                    {/* Fundo = estimativa; preenchimento = tempo realmente gasto. */}
+                    <div className="absolute inset-y-0 left-0 bg-white/10" style={{ width: `${(item.estimado / escala) * 100}%` }} />
+                    <div
+                      className={`absolute inset-y-0 left-0 ${item.estourou ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                      style={{ width: `${(item.apontado / escala) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Por criticidade */}

@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Task } from '../types';
-import { Pencil, Eye, Check, RotateCcw, Bell, BellOff, Trash2, Plus, ListChecks, MessageSquare } from 'lucide-react';
+import { Pencil, Eye, Check, RotateCcw, Bell, BellOff, Trash2, Plus, ListChecks, MessageSquare, FileStack, Archive } from 'lucide-react';
 
 export interface TaskMenuState {
   x: number;
@@ -20,9 +20,13 @@ interface TaskContextMenuProps {
   onAddSubtask: (task: Task, title: string) => void;
   /** Abre os detalhes já com o campo de comentário focado (tarefa finalizada). */
   onComment: (task: Task) => void;
+  /** Guarda a tarefa como modelo reaproveitável. */
+  onSaveTemplate: (task: Task) => void;
+  /** Arquiva a tarefa finalizada. */
+  onArchive: (task: Task) => void;
 }
 
-export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComplete, onToggleNotifications, onDelete, onAddSubtask, onComment }: TaskContextMenuProps) {
+export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComplete, onToggleNotifications, onDelete, onAddSubtask, onComment, onSaveTemplate, onArchive }: TaskContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -147,10 +151,19 @@ export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComple
           )}
         </button>
       )}
+      {/* Arquivar é o destino natural de quem já terminou — mas só de quem terminou. */}
+      {task.completed && !task.archived && (
+        <button className={item} onClick={run(onArchive)}>
+          <Archive size={15} className="text-emerald-400" /> Arquivar
+        </button>
+      )}
       <button className={item} onClick={run(onToggleNotifications)}>
         {task.notificationsEnabled
           ? <><BellOff size={15} className="text-zinc-500" /> Desativar lembretes</>
           : <><Bell size={15} className="text-indigo-400" /> Ativar lembretes</>}
+      </button>
+      <button className={item} onClick={run(onSaveTemplate)}>
+        <FileStack size={15} className="text-zinc-500" /> Salvar como modelo
       </button>
       <div className="my-1 border-t border-white/5" />
       <button className="flex items-center gap-2.5 w-full text-left px-3 py-1.5 text-sm text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors" onClick={run(onDelete)}>

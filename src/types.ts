@@ -30,8 +30,16 @@ export interface Attachment {
   id: string;
   type: AttachmentType;
   title?: string;
-  /** URL (link), texto (code) ou dataURL (image/file). */
+  /**
+   * URL (link), texto (code) ou dataURL (image/file).
+   * Anexos novos de arquivo/imagem gravam em disco e usam `file` — o dataURL
+   * fica só nos anexos antigos, até a migração passar por eles.
+   */
   content: string;
+  /** Nome do arquivo em userData/attachments (imagens e arquivos gravados em disco). */
+  file?: string;
+  /** Tamanho em bytes (quando gravado em disco). */
+  size?: number;
   /** Linguagem opcional para anexos de código. */
   language?: string;
   /** MIME do arquivo (para type='file'). */
@@ -139,4 +147,55 @@ export interface Task {
   attachments?: Attachment[];
   /** Comentários sobre a tarefa (só podem ser escritos com ela finalizada). */
   comments?: TaskComment[];
+  /** Tarefas que precisam terminar antes desta começar (termina-para-começar). */
+  dependsOn?: string[];
+  /** Marco: data única, sem duração, desenhado como losango no Gantt. */
+  milestone?: boolean;
+  /** Estimativa de esforço, em minutos. */
+  estimateMinutes?: number;
+  /** Tempo apontado, em minutos (soma das sessões). */
+  spentMinutes?: number;
+  /** Sessões de foco registradas na tarefa. */
+  timeEntries?: TimeEntry[];
+}
+
+/** Apontamento de tempo (Pomodoro ou lançamento manual). */
+export interface TimeEntry {
+  id: string;
+  minutes: number;
+  startedAt: string;
+  /** De onde veio: ciclo do Pomodoro ou digitado à mão. */
+  source: 'pomodoro' | 'manual';
+}
+
+/** Modelo reaproveitável de tarefa ou de projeto inteiro. */
+export interface Template {
+  id: string;
+  name: string;
+  kind: 'task' | 'project';
+  createdAt: string;
+  /** Molde da tarefa (kind='task'). */
+  task?: TemplateTask;
+  /** Molde do projeto (kind='project'), com épicos e tarefas. */
+  project?: {
+    name: string;
+    color: string;
+    description?: string;
+    columns?: { id: string; label: string }[];
+    readme?: string;
+    epics: { name: string; color?: string; description?: string }[];
+    /** `epicIndex` aponta para a posição em `epics` (null = sem épico). */
+    tasks: (TemplateTask & { epicIndex: number | null })[];
+  };
+}
+
+export interface TemplateTask {
+  title: string;
+  description?: string;
+  urgency: Urgency;
+  tags: string[];
+  estimateMinutes?: number;
+  subtasks: { title: string }[];
+  /** Dias a partir da criação para o prazo (ausente = sem prazo). */
+  dueInDays?: number;
 }

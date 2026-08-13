@@ -1,5 +1,24 @@
 export {};
 
+/** Estado do backup automático em pasta. */
+interface BackupState {
+  enabled: boolean;
+  dir: string;
+  keep: number;
+  lastAt: string | null;
+  count: number;
+  /** Pastas de nuvem detectadas na máquina (OneDrive, Google Drive). */
+  clouds: { id: string; label: string; dir: string }[];
+}
+
+/** Estado do atalho global de captura rápida. */
+interface CaptureConfig {
+  enabled: boolean;
+  accelerator: string;
+  registered: boolean;
+  defaultAccelerator: string;
+}
+
 // Tipagem da ponte segura exposta pelo preload do Electron (contextBridge).
 declare global {
   interface Window {
@@ -40,6 +59,26 @@ declare global {
         respond: (message: { id: string; ok: boolean; data?: unknown; error?: string; status?: number }) => void;
         onRequest: (cb: (req: { id: string; kind: string; payload: any }) => void) => () => void;
         onCancel: (cb: (msg: { id: string }) => void) => () => void;
+      };
+      files: {
+        save: (payload: { base64: string; ext?: string }) => Promise<{ ok: boolean; file?: string; size?: number; error?: string }>;
+        remove: (name: string) => Promise<boolean>;
+        prune: (used: string[]) => Promise<number>;
+      };
+      backup: {
+        state: () => Promise<BackupState>;
+        set: (options: { enabled?: boolean; dir?: string; keep?: number }) => Promise<BackupState>;
+        chooseDir: () => Promise<BackupState>;
+        write: (json: string) => Promise<{ ok: boolean; file?: string; dir?: string; state?: BackupState; error?: string }>;
+        openDir: () => Promise<string>;
+        list: () => Promise<{ name: string; size: number; at: string }[]>;
+        read: (name: string) => Promise<string | null>;
+      };
+      capture: {
+        get: () => Promise<CaptureConfig>;
+        set: (options: { enabled?: boolean; accelerator?: string }) => Promise<CaptureConfig>;
+        saved: (title: string) => void;
+        onText: (cb: (text: string) => void) => () => void;
       };
       updates: {
         install: () => Promise<void>;

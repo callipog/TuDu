@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      background: transparent;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .box {
+      width: 100%; height: 100%;
+      background: #121214;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+      box-shadow: 0 24px 60px -12px rgba(0,0,0,0.75);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .row { display: flex; align-items: center; gap: 10px; padding: 14px 16px; }
+    .mark {
+      width: 8px; height: 8px; border-radius: 999px;
+      background: #6366f1; flex-shrink: 0;
+    }
+    input {
+      flex: 1; min-width: 0;
+      background: transparent; border: 0; outline: 0;
+      color: #fafafa; font-size: 15px;
+      user-select: text; -webkit-user-select: text;
+    }
+    input::placeholder { color: #71717a; }
+    .hint {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      padding: 8px 16px 10px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      color: #71717a; font-size: 11px;
+    }
+    kbd {
+      font-family: Consolas, monospace; font-size: 10px;
+      background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 4px; padding: 1px 5px; color: #a1a1aa;
+    }
+    .ok { color: #34d399; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="row">
+      <span class="mark"></span>
+      <input id="q" type="text" autofocus placeholder="O que precisa ser feito?" autocomplete="off" spellcheck="false" />
+    </div>
+    <div class="hint" id="hint">
+      <span><kbd>Enter</kbd> cria</span>
+      <span><kbd>Esc</kbd> fecha</span>
+      <span>· aceita <kbd>amanhã 14h</kbd> <kbd>#tag</kbd> <kbd>!alta</kbd></span>
+    </div>
+  </div>
+
+  <script>
+    const input = document.getElementById('q');
+    const hint = document.getElementById('hint');
+
+    // A janela é reaproveitada entre aberturas: o main manda limpar ao reabrir.
+    window.tuduCapture.onReset(() => {
+      input.value = '';
+      hint.classList.remove('ok');
+      input.focus();
+      input.select();
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        window.tuduCapture.close();
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text) { window.tuduCapture.close(); return; }
+        window.tuduCapture.submit(text);
+        input.value = '';
+      }
+    });
+
+    // Confirmação vinda do app (a tarefa foi mesmo gravada).
+    window.tuduCapture.onSaved((title) => {
+      hint.innerHTML = '<span class="ok">Criada: ' +
+        String(title).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])) +
+        '</span>';
+    });
+
+    window.addEventListener('blur', () => window.tuduCapture.close());
+    input.focus();
+  </script>
+</body>
+</html>
