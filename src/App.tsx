@@ -69,6 +69,7 @@ export default function App() {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const [detailFocusComments, setDetailFocusComments] = useState(false);
   const [confirm, setConfirm] = useState<{ title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void } | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
@@ -305,6 +306,7 @@ export default function App() {
   }
 
   function handleViewTask(task: Task) {
+    setDetailFocusComments(false);
     setDetailTask(task);
   }
 
@@ -484,6 +486,52 @@ export default function App() {
     } catch {
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, subtasks: task.subtasks } : t));
       showToast('Não foi possível salvar a subtarefa.');
+    }
+  }
+
+  /**
+   * Espelha nas cópias que a interface segura (lista, detalhe aberto e menu de
+   * contexto) uma alteração que já foi gravada no banco.
+   */
+  function applyTaskPatch(id: string, patch: Partial<Task>) {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+    setDetailTask(prev => prev && prev.id === id ? { ...prev, ...patch } : prev);
+    setTaskMenu(prev => prev && prev.task.id === id ? { ...prev, task: { ...prev.task, ...patch } } : prev);
+  }
+
+  /** Comentário de conclusão: só entra em tarefa finalizada. */
+  async function handleAddComment(task: Task, text: string) {
+    const conteudo = text.trim();
+    if (!conteudo || !task.completed) return;
+    try {
+      const comments = await taskService.addComment(task.id, conteudo);
+      applyTaskPatch(task.id, { comments });
+    } catch (err) {
+      console.error('Failed to add comment', err);
+      showToast('Não foi possível salvar o comentário.');
+    }
+  }
+
+  async function handleDeleteComment(task: Task, commentId: string) {
+    try {
+      const comments = await taskService.removeComment(task.id, commentId);
+      applyTaskPatch(task.id, { comments });
+    } catch (err) {
+      console.error('Failed to remove comment', err);
+      showToast('Não foi possível apagar o comentário.');
+    }
+  }
+
+  /** Subtarefa criada direto pelo menu de contexto, sem abrir a tarefa. */
+  async function handleQuickAddSubtask(task: Task, title: string) {
+    const titulo = title.trim();
+    if (!titulo) return;
+    try {
+      const subtasks = await taskService.addSubtask(task.id, titulo);
+      applyTaskPatch(task.id, { subtasks });
+    } catch (err) {
+      console.error('Failed to add subtask', err);
+      showToast('Não foi possível criar a subtarefa.');
     }
   }
 
@@ -1194,6 +1242,7 @@ export default function App() {
                           time={task.dueDate}
                           completed={task.completed}
                           completedAt={task.completedAt}
+                          commentCount={task.comments?.length}
                           notificationsEnabled={task.notificationsEnabled}
                           recurrence={task.recurrence}
                           subtasks={task.subtasks}
@@ -1515,6 +1564,9 @@ export default function App() {
         project={projectById(detailTask?.projectId)}
         epic={epicById(detailTask?.epicId)}
         statusText={detailTask ? statusLabelOf(detailTask) : undefined}
+        onAddComment={handleAddComment}
+        onDeleteComment={handleDeleteComment}
+        focusComments={detailFocusComments}
       />
 
       <ConfirmDialog
@@ -1578,6 +1630,8 @@ export default function App() {
         onToggleComplete={handleToggleTask}
         onToggleNotifications={handleToggleNotifications}
         onDelete={moveTaskToTrash}
+        onAddSubtask={handleQuickAddSubtask}
+        onComment={(task) => { setDetailFocusComments(true); setDetailTask(task); }}
       />
 
       <RoadmapReviewModal

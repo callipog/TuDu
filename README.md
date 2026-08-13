@@ -17,6 +17,7 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Anexos**: links, trechos de código, imagens e **arquivos** (pdf, etc.).
 - **Subtarefas / checklist** com barra de progresso.
 - **Carimbo de conclusão**: ao marcar como finalizada, a tarefa guarda a data e a hora — visíveis no card e nos detalhes.
+- **Comentários de conclusão**: com a tarefa finalizada, os detalhes liberam um campo para registrar como foi a entrega (data/hora em cada comentário). Reabrir a tarefa preserva o histórico e volta a travar a escrita.
 - **Tarefas recorrentes**: diária, semanal, mensal, **a cada N dias** ou **dias específicos da semana**, com término opcional (nunca / após N ocorrências / em uma data).
 - **Arquivamento** e **Lixeira** (recuperável; expurgo automático após 30 dias).
 
@@ -55,6 +56,7 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Atalhos de teclado** com guia acessível pelo header ou tecla `?`; menu do app no logo.
 - **Gerenciador de tags**: crie tags e edite suas cores, com **escopo global ou por projeto** — tag de projeto não polui o contexto dos outros.
 - **Subtarefas no card**: clique no contador para abrir o checklist e marcar sem abrir a tarefa.
+- **Menu do botão direito** sobre a tarefa: **quick add de subtarefa** (Enter cria e o menu segue aberto para encadear várias), além de ver, editar, concluir, comentar, lembretes e excluir.
 - **Mini calendário** semanal com atalho "Ir até hoje".
 
 ### Sistema (Configurações)

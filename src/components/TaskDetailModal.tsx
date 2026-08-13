@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { Task, Persona, Project, Epic } from '../types';
 import { tagService } from '../services/tags';
@@ -6,7 +6,7 @@ import { Avatar } from './Avatar';
 import { AttachmentsView } from './Attachments';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Pencil, Bell, BellOff, Repeat, Check, CalendarClock } from 'lucide-react';
+import { Pencil, Bell, BellOff, Repeat, Check, CalendarClock, MessageSquare, Lock, Trash2, Send } from 'lucide-react';
 
 interface TaskDetailModalProps {
   isOpen: boolean;
@@ -17,6 +17,11 @@ interface TaskDetailModalProps {
   project?: Project;
   epic?: Epic;
   statusText?: string;
+  /** Comentar só é liberado com a tarefa finalizada. */
+  onAddComment?: (task: Task, text: string) => void;
+  onDeleteComment?: (task: Task, commentId: string) => void;
+  /** Abre com o campo de comentário focado (vindo do menu de contexto). */
+  focusComments?: boolean;
 }
 
 const urgencyLabels: Record<Task['urgency'], { label: string; dot: string }> = {
@@ -66,8 +71,35 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, project, epic, statusText }: TaskDetailModalProps) {
+export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, project, epic, statusText, onAddComment, onDeleteComment, focusComments }: TaskDetailModalProps) {
+  const [comment, setComment] = useState('');
+  const commentRef = useRef<HTMLTextAreaElement>(null);
+  const podeComentar = !!task?.completed && !!onAddComment;
+
+  // Troca de tarefa (ou fechar) descarta o rascunho não enviado.
+  useEffect(() => {
+    setComment('');
+  }, [task?.id, isOpen]);
+
+  useEffect(() => {
+    if (isOpen && focusComments && podeComentar) {
+      // Espera o modal montar para o foco pegar.
+      const t = setTimeout(() => commentRef.current?.focus(), 60);
+      return () => clearTimeout(t);
+    }
+  }, [isOpen, focusComments, podeComentar, task?.id]);
+
   if (!task) return null;
+
+  const comments = task.comments ?? [];
+
+  const enviarComentario = () => {
+    const texto = comment.trim();
+    if (!texto || !onAddComment) return;
+    onAddComment(task, texto);
+    setComment('');
+    commentRef.current?.focus();
+  };
 
   const urgency = urgencyLabels[task.urgency];
   const status = statusText || statusLabels[task.status || (task.completed ? 'done' : 'todo')] || task.status;
@@ -171,6 +203,61 @@ export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, proje
           <Field label={`Anexos · ${task.attachments.length}`}>
             <div className="mt-1">
               <AttachmentsView attachments={task.attachments} />
+            </div>
+          </Field>
+        )}
+
+        {/* Comentários: liberados só depois que a tarefa é finalizada. */}
+        {(onAddComment || comments.length > 0) && (
+          <Field label={comments.length > 0 ? `Comentários · ${comments.length}` : 'Comentários'}>
+            <div className="space-y-2 mt-1">
+              {comments.map(c => (
+                <div key={c.id} className="group/c flex items-start gap-2 rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                  <MessageSquare size={13} className="text-zinc-500 mt-0.5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-zinc-200 whitespace-pre-wrap break-words">{c.text}</p>
+                    <p className="text-[10px] text-zinc-500 mt-1">
+                      {format(parseISO(c.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                    </p>
+                  </div>
+                  {onDeleteComment && (
+                    <button
+                      onClick={() => onDeleteComment(task, c.id)}
+                      title="Apagar comentário"
+                      className="shrink-0 p-1 rounded-md text-zinc-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors opacity-0 group-hover/c:opacity-100"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              {podeComentar ? (
+                <div className="flex items-end gap-2">
+                  <textarea
+                    ref={commentRef}
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); enviarComentario(); }
+                    }}
+                    placeholder="Como foi a entrega? O que ficou pendente?"
+                    className="flex-1 h-16 resize-none bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                  />
+                  <button
+                    onClick={enviarComentario}
+                    disabled={!comment.trim()}
+                    title="Comentar (Ctrl+Enter)"
+                    className="shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:hover:bg-indigo-600 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+                  >
+                    <Send size={13} /> Comentar
+                  </button>
+                </div>
+              ) : (
+                <p className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  <Lock size={12} /> Os comentários abrem quando a tarefa for finalizada.
+                </p>
+              )}
             </div>
           </Field>
         )}

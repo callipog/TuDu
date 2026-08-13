@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { Task } from '../types';
+import { Task, SubTask, TaskComment } from '../types';
 import { addDays, addWeeks, addMonths, parseISO } from 'date-fns';
 
 /** Calcula a próxima data de entrega conforme a regra de recorrência. */
@@ -49,6 +49,43 @@ export const taskService = {
     const updated = await db.tasks.get(id);
     if (!updated) throw new Error('Task not found');
     return updated;
+  },
+
+  /**
+   * Acrescenta uma subtarefa lendo o estado atual do banco. Ler-e-gravar dentro
+   * da transação evita que duas adições seguidas (quick add) se atropelem, o
+   * que aconteceria ao montar o array a partir de uma cópia já defasada.
+   */
+  async addSubtask(id: string, title: string): Promise<SubTask[]> {
+    return await db.transaction('rw', db.tasks, async () => {
+      const task = await db.tasks.get(id);
+      if (!task) throw new Error('Task not found');
+      const subtasks = [...(task.subtasks ?? []), { id: crypto.randomUUID(), title, done: false }];
+      await db.tasks.update(id, { subtasks });
+      return subtasks;
+    });
+  },
+
+  /** Acrescenta um comentário (mesma proteção contra corrida do addSubtask). */
+  async addComment(id: string, text: string): Promise<TaskComment[]> {
+    return await db.transaction('rw', db.tasks, async () => {
+      const task = await db.tasks.get(id);
+      if (!task) throw new Error('Task not found');
+      const comments = [...(task.comments ?? []), { id: crypto.randomUUID(), text, createdAt: new Date().toISOString() }];
+      await db.tasks.update(id, { comments });
+      return comments;
+    });
+  },
+
+  /** Remove um comentário e devolve a lista resultante. */
+  async removeComment(id: string, commentId: string): Promise<TaskComment[]> {
+    return await db.transaction('rw', db.tasks, async () => {
+      const task = await db.tasks.get(id);
+      if (!task) throw new Error('Task not found');
+      const comments = (task.comments ?? []).filter(c => c.id !== commentId);
+      await db.tasks.update(id, { comments });
+      return comments;
+    });
   },
 
   /** Envia a tarefa para a lixeira (soft delete). */

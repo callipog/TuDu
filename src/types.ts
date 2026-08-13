@@ -17,6 +17,13 @@ export interface SubTask {
   done: boolean;
 }
 
+/** Comentário sobre a tarefa (liberado quando ela é finalizada). */
+export interface TaskComment {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
 export type AttachmentType = 'link' | 'code' | 'image' | 'file';
 
 export interface Attachment {
@@ -130,4 +137,6 @@ export interface Task {
   assigneeId?: string;
   /** Anexos (links, código, imagens). */
   attachments?: Attachment[];
+  /** Comentários sobre a tarefa (só podem ser escritos com ela finalizada). */
+  comments?: TaskComment[];
 }
