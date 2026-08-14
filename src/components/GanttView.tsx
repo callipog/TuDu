@@ -326,7 +326,9 @@ export function GanttView({ tasks, epics, statusLabel, statusColor, onSelect }: 
 
           {/* Linhas com barras */}
           {rows.map(row => {
-            const grid = `repeating-linear-gradient(to right, transparent, transparent ${DAY_W - 1}px, rgba(255,255,255,0.05) ${DAY_W - 1}px, rgba(255,255,255,0.05) ${DAY_W}px)`;
+            // Cinza neutro em vez de branco translúcido: a grade precisa
+            // aparecer tanto no fundo escuro quanto no claro/sépia.
+            const grid = `repeating-linear-gradient(to right, transparent, transparent ${DAY_W - 1}px, rgba(128,128,128,0.18) ${DAY_W - 1}px, rgba(128,128,128,0.18) ${DAY_W}px)`;
 
             if (row.kind === 'group') {
               const g = barForGroup(row.itens);

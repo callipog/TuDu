@@ -3,6 +3,7 @@ import { Task, Urgency, TaskStatus } from '../types';
 import { StatusColor } from '../services/boards';
 import { tagService } from '../services/tags';
 import { taskMatches } from '../services/search';
+import { PromptState } from './PromptDialog';
 import { format, parseISO, isPast } from 'date-fns';
 import { Search, Pencil, Eye, Check, Bell, Repeat, ListChecks, ChevronUp, ChevronDown, Save, Trash2, Star } from 'lucide-react';
 
@@ -14,6 +15,8 @@ interface TaskListViewProps {
   onContext?: (e: React.MouseEvent, task: Task) => void;
   statusLabel?: (task: Task) => string;
   statusColor?: (task: Task) => StatusColor;
+  /** Pede um nome ao usuário pelo diálogo do app (o Electron não tem prompt). */
+  onAskName: (state: PromptState) => void;
 }
 
 type SortKey = 'title' | 'status' | 'urgency' | 'due';
@@ -54,7 +57,7 @@ function loadSaved(): SavedFilter[] {
   return [];
 }
 
-export function TaskListView({ tasks, onView, onEdit, onToggle, onContext, statusLabel, statusColor }: TaskListViewProps) {
+export function TaskListView({ tasks, onView, onEdit, onToggle, onContext, statusLabel, statusColor, onAskName }: TaskListViewProps) {
   const [search, setSearch] = useState('');
   const [urgencyFilter, setUrgencyFilter] = useState<Urgency | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
@@ -123,11 +126,18 @@ export function TaskListView({ tasks, onView, onEdit, onToggle, onContext, statu
     try { localStorage.setItem(SAVED_KEY, JSON.stringify(list)); } catch { /* ignore */ }
   };
 
+  // O Electron não implementa window.prompt (devolve null e não abre nada),
+  // então quem pede o nome é o diálogo do próprio app.
   const saveCurrent = () => {
-    const name = window.prompt('Nome para este filtro:');
-    if (!name || !name.trim()) return;
-    const entry: SavedFilter = { name: name.trim(), search, urgency: urgencyFilter, status: statusFilter, tag: tagFilter, sortKey, sortDir };
-    persist([...saved.filter(s => s.name !== entry.name), entry]);
+    onAskName({
+      title: 'Salvar filtro',
+      message: 'Guarda a busca, os filtros e a ordenação atuais desta lista.',
+      label: 'Nome do filtro',
+      onConfirm: (name) => {
+        const entry: SavedFilter = { name, search, urgency: urgencyFilter, status: statusFilter, tag: tagFilter, sortKey, sortDir };
+        persist([...saved.filter(s => s.name !== entry.name), entry]);
+      },
+    });
   };
 
   const applySaved = (name: string) => {

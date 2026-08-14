@@ -145,9 +145,14 @@
   color-scheme: light;
 }
 
-/* --- Superfícies -------------------------------------------------------- */
+/* --- Superfícies --------------------------------------------------------
+   Toda cor literal usada no app precisa aparecer aqui: uma que fique de fora
+   continua escura no tema claro. Foi o que aconteceu com a tabela do Gantt
+   (#0e0e10) e o cabeçalho de mês das arquivadas (#151517). */
 .light .bg-\[\#09090b\] { background-color: #f4f4f5; }
+.light .bg-\[\#0e0e10\] { background-color: #fbfbfc; }
 .light .bg-\[\#121214\] { background-color: #ffffff; }
+.light .bg-\[\#151517\] { background-color: #f0f0f2; }
 .light .bg-\[\#18181b\] { background-color: #ffffff; }
 .light .bg-zinc-950\/50 { background-color: rgba(255, 255, 255, 0.75); }
 .light .bg-black\/40 { background-color: rgba(0, 0, 0, 0.05); }
@@ -239,7 +244,9 @@
 
 /* --- Superfícies (papel quente e claro) --------------------------------- */
 .theme-sepia .bg-\[\#09090b\] { background-color: #f2ece1; } /* canvas */
+.theme-sepia .bg-\[\#0e0e10\] { background-color: #f7f2e8; } /* menus e tabela do Gantt */
 .theme-sepia .bg-\[\#121214\] { background-color: #faf6ee; } /* cards (elevados) */
+.theme-sepia .bg-\[\#151517\] { background-color: #ece5d8; } /* cabeçalhos agrupadores */
 .theme-sepia .bg-\[\#18181b\] { background-color: #fdfaf3; } /* modais/inputs */
 .theme-sepia .bg-zinc-950\/50 { background-color: rgba(250, 246, 238, 0.82); }
 .theme-sepia .bg-black\/40 { background-color: rgba(92, 76, 50, 0.05); }

@@ -34,6 +34,7 @@ import { ProjectsManagerView } from './components/ProjectsManagerView';
 import { RoadmapReviewModal } from './components/RoadmapReviewModal';
 import { TemplatesModal } from './components/TemplatesModal';
 import { MilestoneHelpModal } from './components/MilestoneHelpModal';
+import { PromptDialog, PromptState } from './components/PromptDialog';
 import { templateService } from './services/templates';
 import { startBridgeListener, respondOk, respondError, PendingReview } from './services/bridge';
 import { applyPlan } from './services/roadmap';
@@ -106,6 +107,7 @@ export default function App() {
   const [isPersonasModalOpen, setIsPersonasModalOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isMilestoneHelpOpen, setIsMilestoneHelpOpen] = useState(false);
+  const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [taskMenu, setTaskMenu] = useState<TaskMenuState | null>(null);
   const [newTaskProjectId, setNewTaskProjectId] = useState<string>('');
   const [newTaskEpicId, setNewTaskEpicId] = useState<string>('');
@@ -596,25 +598,38 @@ export default function App() {
 
   /* ---- Modelos (templates) ---- */
 
-  async function handleSaveTaskTemplate(task: Task) {
-    const nome = window.prompt('Nome do modelo:', task.title);
-    if (nome === null) return;
-    await templateService.saveTask(nome, task);
-    showToast(`Modelo "${nome.trim() || task.title}" salvo.`, {
-      actionLabel: 'Ver modelos',
-      onAction: () => setIsTemplatesOpen(true),
+  function handleSaveTaskTemplate(task: Task) {
+    setPrompt({
+      title: 'Salvar tarefa como modelo',
+      message: 'Guarda título, descrição, tags, checklist e estimativa. O prazo vira uma distância em dias, recalculada a cada uso.',
+      label: 'Nome do modelo',
+      defaultValue: task.title,
+      onConfirm: async (nome) => {
+        await templateService.saveTask(nome, task);
+        showToast(`Modelo "${nome}" salvo.`, {
+          actionLabel: 'Ver modelos',
+          onAction: () => setIsTemplatesOpen(true),
+        });
+      },
     });
   }
 
-  async function handleSaveProjectTemplate(projectId: string) {
+  function handleSaveProjectTemplate(projectId: string) {
     const projeto = projectById(projectId);
     if (!projeto) return;
-    const nome = window.prompt('Nome do modelo de projeto:', projeto.name);
-    if (nome === null) return;
-    await templateService.saveProject(nome, projeto, epics, tasks);
-    showToast(`Modelo "${nome.trim() || projeto.name}" salvo.`, {
-      actionLabel: 'Ver modelos',
-      onAction: () => setIsTemplatesOpen(true),
+    const ativas = tasks.filter(t => t.projectId === projectId && !t.archived && !t.deleted).length;
+    setPrompt({
+      title: 'Salvar projeto como modelo',
+      message: `Guarda os épicos, as colunas do board e as ${ativas} tarefa(s) ativas deste projeto.`,
+      label: 'Nome do modelo',
+      defaultValue: projeto.name,
+      onConfirm: async (nome) => {
+        await templateService.saveProject(nome, projeto, epics, tasks);
+        showToast(`Modelo "${nome}" salvo.`, {
+          actionLabel: 'Ver modelos',
+          onAction: () => setIsTemplatesOpen(true),
+        });
+      },
     });
   }
 
@@ -1343,6 +1358,7 @@ export default function App() {
                 onContext={openTaskMenu}
                 statusLabel={statusLabelOf}
                 statusColor={statusColorOf}
+                onAskName={setPrompt}
               />
             ) : null}
 
@@ -1940,6 +1956,8 @@ export default function App() {
         isOpen={isMilestoneHelpOpen}
         onClose={() => setIsMilestoneHelpOpen(false)}
       />
+
+      <PromptDialog state={prompt} onClose={() => setPrompt(null)} />
 
       <TemplatesModal
         isOpen={isTemplatesOpen}
