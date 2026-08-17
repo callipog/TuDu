@@ -264,7 +264,10 @@ export function ArchivedView({ tasks, onUnarchive, onClickTask, onDeleteMany }: 
                   {/* Cabeçalho do mês: clique recolhe/expande. */}
                   <button
                     onClick={() => toggleGroup(group.key)}
-                    className="sticky top-0 z-10 w-full flex items-center gap-2 px-5 py-2 bg-[#151517] border-y border-white/10 text-left hover:bg-white/[0.06] transition-colors"
+                    // O hover precisa ser uma cor OPACA: um tint translúcido
+                    // (bg-white/x) substitui o fundo sólido e deixa as tarefas
+                    // que passam por baixo do cabeçalho sticky vazarem por trás.
+                    className="sticky top-0 z-10 w-full flex items-center gap-2 px-5 py-2 bg-[#151517] hover:bg-[#1d1d21] border-y border-white/10 text-left transition-colors"
                     title={aberto ? 'Recolher este mês' : 'Expandir este mês'}
                   >
                     <ChevronDown size={14} className={`text-zinc-500 transition-transform ${aberto ? '' : '-rotate-90'}`} />

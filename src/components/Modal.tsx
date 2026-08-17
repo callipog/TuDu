@@ -10,6 +10,12 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   size?: ModalSize;
+  /**
+   * Entrega o corpo sem padding e sem rolagem própria: o conteúdo ocupa a
+   * caixa inteira e cuida da própria rolagem. Usado por telas mestre-detalhe
+   * (trilha lateral + painel), onde só o painel da direita rola.
+   */
+  flush?: boolean;
 }
 
 const sizeClass: Record<ModalSize, string> = {
@@ -21,7 +27,7 @@ const sizeClass: Record<ModalSize, string> = {
   '4xl': 'max-w-4xl',
 };
 
-export function Modal({ isOpen, onClose, title, children, size = 'lg' }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, size = 'lg', flush = false }: ModalProps) {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -48,7 +54,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'lg' }: ModalPr
                 <X size={18} />
               </button>
             </div>
-            <div className="p-6 overflow-y-auto custom-scrollbar">
+            <div className={flush ? 'flex-1 min-h-0 flex' : 'p-6 overflow-y-auto custom-scrollbar'}>
               {children}
             </div>
           </motion.div>

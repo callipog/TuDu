@@ -3,6 +3,7 @@ import { Task } from '../types';
 import { startOfWeek, addDays, isSameDay, isToday, parseISO, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 type ViewMode = 'week' | 'day';
 
@@ -48,6 +49,16 @@ export function AgendaView({ tasks, onEditTask, onCreateAt }: AgendaViewProps) {
   const [mode, setMode] = useState<ViewMode>('week');
   const [refDate, setRefDate] = useState<Date>(new Date());
   const scrollRef = useRef<HTMLDivElement>(null);
+  const semMovimento = useReducedMotion();
+
+  /**
+   * Sentido do movimento, escrito no clique: -1 volta, 1 avança, 0 salto
+   * (trocar semana/dia, ou "Ir até hoje" caindo no mesmo período). Derivar do
+   * `refDate` anterior durante o render daria a direção errada justamente no
+   * primeiro quadro, que é onde a animação começa.
+   */
+  const dirRef = useRef(0);
+  const [pulso, setPulso] = useState(0);
 
   const days = useMemo(() => {
     if (mode === 'day') return [refDate];
@@ -67,6 +78,28 @@ export function AgendaView({ tasks, onEditTask, onCreateAt }: AgendaViewProps) {
     ? format(refDate, "EEEE, d 'de' MMMM yyyy", { locale: ptBR })
     : `${format(days[0], 'd MMM', { locale: ptBR })} – ${format(days[6], 'd MMM yyyy', { locale: ptBR })}`;
 
+  const navegar = (delta: number) => {
+    dirRef.current = Math.sign(delta);
+    setRefDate(d => addDays(d, delta));
+  };
+
+  const irAteHoje = () => {
+    const hoje = new Date();
+    dirRef.current = Math.sign(hoje.getTime() - refDate.getTime());
+    setRefDate(hoje);
+    setPulso(p => p + 1);
+  };
+
+  const trocarModo = (m: ViewMode) => {
+    dirRef.current = 0; // troca de recorte não tem "lado": entra por fade
+    setMode(m);
+  };
+
+  const dir = dirRef.current;
+  const desloc = semMovimento ? 0 : 30;
+  // A chave junta período e modo: os dois trocam o conjunto de colunas.
+  const periodoKey = `${mode}-${format(days[0], 'yyyy-MM-dd')}`;
+
   const handleColumnClick = (day: Date, e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
@@ -78,14 +111,32 @@ export function AgendaView({ tasks, onEditTask, onCreateAt }: AgendaViewProps) {
     <div className="flex flex-col flex-1 min-h-0">
       {/* Navegação */}
       <div className="flex items-center justify-between mb-4 shrink-0 gap-3 flex-wrap">
-        <h3 className="text-sm font-semibold text-white capitalize">{rangeLabel}</h3>
+        {/* Rolagem vertical do período. Os dois rótulos se movem juntos, por
+            isso são absolutos; o texto invisível é o molde que dá largura à
+            caixa, já que o intervalo muda de tamanho conforme o mês. */}
+        <div className="relative h-5 flex items-center overflow-hidden min-w-0">
+          <span aria-hidden className="invisible text-sm font-semibold capitalize whitespace-nowrap">{rangeLabel}</span>
+          <AnimatePresence initial={false}>
+            <motion.h3
+              key={periodoKey}
+              initial={semMovimento ? { opacity: 0 } : { y: dir === 0 ? 0 : dir * 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={semMovimento ? { opacity: 0 } : { y: dir === 0 ? 0 : dir * -20, opacity: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="absolute left-0 text-sm font-semibold text-white capitalize whitespace-nowrap"
+            >
+              {rangeLabel}
+            </motion.h3>
+          </AnimatePresence>
+        </div>
+
         <div className="flex items-center gap-3">
           {/* Toggle semana/dia */}
           <div className="flex bg-white/5 border border-white/10 rounded-lg p-0.5">
             {(['week', 'day'] as ViewMode[]).map(m => (
               <button
                 key={m}
-                onClick={() => setMode(m)}
+                onClick={() => trocarModo(m)}
                 className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${mode === m ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:text-white'}`}
               >
                 {m === 'week' ? 'Semana' : 'Dia'}
@@ -94,14 +145,14 @@ export function AgendaView({ tasks, onEditTask, onCreateAt }: AgendaViewProps) {
           </div>
           <div className="flex items-center gap-2">
             {!isCurrent && (
-              <button onClick={() => setRefDate(new Date())} className="text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 px-2 py-1 rounded hover:bg-white/5 transition-colors">
+              <button onClick={irAteHoje} className="text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 px-2 py-1 rounded hover:bg-white/5 transition-colors">
                 Ir até hoje
               </button>
             )}
-            <button onClick={() => setRefDate(d => addDays(d, -step))} className="p-1.5 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors">
+            <button onClick={() => navegar(-step)} title={mode === 'day' ? 'Dia anterior' : 'Semana anterior'} className="p-1.5 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors">
               <ChevronLeft size={18} />
             </button>
-            <button onClick={() => setRefDate(d => addDays(d, step))} className="p-1.5 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors">
+            <button onClick={() => navegar(step)} title={mode === 'day' ? 'Próximo dia' : 'Próxima semana'} className="p-1.5 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors">
               <ChevronRight size={18} />
             </button>
           </div>
@@ -111,14 +162,32 @@ export function AgendaView({ tasks, onEditTask, onCreateAt }: AgendaViewProps) {
       {/* Cabeçalho de dias */}
       <div className="flex shrink-0 border-b border-white/10 pb-2 pr-3">
         <div className="w-16 shrink-0" />
-        {days.map(day => (
-          <div key={day.toISOString()} className="flex-1 text-center">
-            <p className="text-[10px] uppercase text-zinc-500 font-bold">{format(day, 'EEE', { locale: ptBR })}</p>
-            <p className={`text-sm font-semibold mt-0.5 w-7 h-7 mx-auto flex items-center justify-center rounded-full ${isToday(day) ? 'bg-indigo-600 text-white' : 'text-zinc-300'}`}>
-              {format(day, 'd')}
-            </p>
-          </div>
-        ))}
+        <div className="flex-1 flex overflow-x-hidden">
+          <motion.div
+            key={periodoKey}
+            initial={{ x: dir * desloc, opacity: semMovimento ? 1 : 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className="flex-1 flex"
+          >
+            {days.map(day => (
+              <div key={day.toISOString()} className="flex-1 text-center">
+                <p className="text-[10px] uppercase text-zinc-500 font-bold">{format(day, 'EEE', { locale: ptBR })}</p>
+                <motion.p
+                  // Remontar no pulso refaz a animação: é o retorno visual do
+                  // "Ir até hoje" quando o período já continha hoje.
+                  key={isToday(day) ? `hoje-${pulso}` : 'dia'}
+                  initial={isToday(day) && pulso > 0 && !semMovimento ? { scale: 0.7 } : false}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 520, damping: 16 }}
+                  className={`text-sm font-semibold mt-0.5 w-7 h-7 mx-auto flex items-center justify-center rounded-full ${isToday(day) ? 'bg-indigo-600 text-white' : 'text-zinc-300'}`}
+                >
+                  {format(day, 'd')}
+                </motion.p>
+              </div>
+            ))}
+          </motion.div>
+        </div>
       </div>
 
       {/* Grade de horários */}
@@ -136,6 +205,16 @@ export function AgendaView({ tasks, onEditTask, onCreateAt }: AgendaViewProps) {
             ))}
           </div>
 
+          {/* Só as colunas deslizam: a calha de horas à esquerda não muda de
+              conteúdo, e movê-la junto faria a grade inteira parecer solta. */}
+          <div className="flex-1 flex overflow-x-hidden">
+          <motion.div
+            key={periodoKey}
+            initial={{ x: dir * desloc, opacity: semMovimento ? 1 : 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className="flex-1 flex"
+          >
           {days.map(day => {
             const dayTasks = tasksWithTime.filter(t => isSameDay(parseISO(t.dueDate!), day));
             const placed = layoutDay(dayTasks);
@@ -172,6 +251,8 @@ export function AgendaView({ tasks, onEditTask, onCreateAt }: AgendaViewProps) {
               </div>
             );
           })}
+          </motion.div>
+          </div>
         </div>
       </div>
     </div>

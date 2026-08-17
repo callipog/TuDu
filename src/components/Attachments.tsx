@@ -46,7 +46,7 @@ function AttachmentRow({ a, onRemove }: { key?: React.Key; a: Attachment; onRemo
         )}
       </div>
       {a.type === 'code' && (
-        <pre className="custom-scrollbar text-[11px] text-zinc-300 bg-black/40 px-3 py-2 overflow-auto max-h-40 border-t border-white/5"><code>{a.content}</code></pre>
+        <pre className="code-scrollbar text-[11px] text-zinc-300 bg-black/40 px-3 py-2 overflow-auto max-h-40 border-t border-white/5"><code>{a.content}</code></pre>
       )}
       {a.type === 'image' && (
         <img src={attachmentService.src(a)} alt={a.title || 'anexo'} className="max-h-48 w-full object-contain bg-black/40 border-t border-white/5" />
@@ -177,7 +177,8 @@ export function AttachmentsEditor({ value, onChange }: { value: Attachment[]; on
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="Cole o trecho de código..."
-            className="w-full h-28 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 transition-colors resize-none"
+            spellCheck={false}
+            className="code-scrollbar w-full h-28 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 transition-colors resize-none"
           />
           <button type="button" onClick={addCode} disabled={!code.trim()} className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 rounded-lg px-3 py-1.5 transition-colors">
             <Plus size={13} /> Adicionar código

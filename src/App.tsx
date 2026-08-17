@@ -20,6 +20,11 @@ import { ShortcutsModal } from './components/ShortcutsModal';
 import { TrashView } from './components/TrashView';
 import { StatsView } from './components/StatsView';
 import { PomodoroModal } from './components/PomodoroModal';
+import { PomodoroBar } from './components/PomodoroBar';
+import { CalendarHelpModal } from './components/CalendarHelpModal';
+import { QuickCalendar } from './components/QuickCalendar';
+import { QuickCalendarHelpModal } from './components/QuickCalendarHelpModal';
+import { usePomodoro } from './hooks/usePomodoro';
 import { ToastHost, Toast } from './components/ToastHost';
 import { CommandPalette } from './components/CommandPalette';
 import { ProjectView } from './components/ProjectView';
@@ -134,6 +139,14 @@ export default function App() {
     try { localStorage.setItem(BOARD_PROJECT_TASKS_KEY, showProjectTasks ? '1' : '0'); } catch { /* ignore */ }
   }, [showProjectTasks]);
 
+  // Modo foco: o estado vive aqui, fora do modal, para a barrinha do topo e o
+  // painel olharem para o mesmo timer.
+  const pomo = usePomodoro({
+    onLogTime: (taskId, minutes) => handleLogTime(taskId, minutes, 'pomodoro'),
+  });
+
+  const [isCalendarHelpOpen, setIsCalendarHelpOpen] = useState(false);
+  const [isQuickCalendarHelpOpen, setIsQuickCalendarHelpOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateFilter, setSelectedDateFilter] = useState<Date | null>(null);
   const [quickCalendarOffset, setQuickCalendarOffset] = useState(0);
@@ -911,11 +924,17 @@ export default function App() {
   const deletedTasks = tasks.filter(t => t.deleted);
   const reportTasks = tasks.filter(t => !t.deleted); // ativas + arquivadas, para relatórios
 
-  const filteredTasks = activeTasks.filter(task => {
-    if (!matchesCommonFilters(task)) return false;
+  /**
+   * Aplica o botão "Tarefas de projetos" do topo. Vale para todas as views que
+   * mostram lista de tarefas: um projeto grande sozinho enche a tela e esconde
+   * as tarefas soltas, então dá para tirá-lo do caminho sem sair da view.
+   * A view de Projeto e a de Equipe ficam de fora — lá o recorte é o assunto.
+   */
+  const hideProjectTasks = <T extends Task>(list: T[]) =>
+    showProjectTasks ? list : list.filter(t => !t.projectId);
 
-    // Board principal: tarefas de projeto podem ser escondidas pelo botão do topo.
-    if (!showProjectTasks && task.projectId) return false;
+  const filteredTasks = hideProjectTasks(activeTasks).filter(task => {
+    if (!matchesCommonFilters(task)) return false;
 
     if (activeTab === 'today') {
       // Deadline hoje OU sem deadline (sempre visível).
@@ -935,12 +954,26 @@ export default function App() {
   });
 
   // Lista do dia selecionado no Calendário (somente tarefas com deadline naquele dia).
-  const calendarDayTasks = activeTasks.filter(task =>
+  const calendarDayTasks = hideProjectTasks(activeTasks).filter(task =>
     matchesCommonFilters(task) && task.dueDate && isSameDay(parseISO(task.dueDate), selectedDate)
   );
 
-  // Quantas tarefas ativas vêm de projetos (rótulo do botão do board).
-  const projectTaskCount = activeTasks.filter(t => !!t.projectId).length;
+  // Views onde o botão "Tarefas de projetos" aparece.
+  const projectToggleTabs = ['inbox', 'today', 'all', 'calendar', 'agenda', 'list', 'stats', 'archived', 'trash'];
+
+  /**
+   * Quantas tarefas de projeto existem NA VIEW ATUAL. Contar sempre as ativas
+   * faria o distintivo mentir nas Arquivadas, na Lixeira e nos Relatórios, que
+   * olham para outro conjunto.
+   */
+  const projectTaskCount = React.useMemo(() => {
+    const universo =
+      activeTab === 'archived' ? archivedTasks :
+      activeTab === 'trash' ? deletedTasks :
+      activeTab === 'stats' ? reportTasks :
+      activeTasks;
+    return universo.filter(t => !!t.projectId).length;
+  }, [activeTab, activeTasks, archivedTasks, deletedTasks, reportTasks]);
 
   // Contador de tarefas atrasadas (prazo já passou e não concluídas).
   const overdueCount = activeTasks.filter(t => !t.completed && t.dueDate && isPast(parseISO(t.dueDate))).length;
@@ -1128,7 +1161,12 @@ export default function App() {
             </h2>
           </div>
           <div className="flex items-center gap-4">
-            {['inbox', 'today', 'all'].includes(activeTab) && (
+            {/* Sessão de foco em andamento com o painel fechado: fica à mão sem
+                ocupar a tela, e um clique traz o painel de volta. */}
+            {pomo.active && !isPomodoroOpen && (
+              <PomodoroBar pomo={pomo} onOpen={() => setIsPomodoroOpen(true)} />
+            )}
+            {projectToggleTabs.includes(activeTab) && (
               <button
                 onClick={() => setShowProjectTasks(v => !v)}
                 title={showProjectTasks ? 'Ocultar as tarefas vinculadas a projetos' : 'Mostrar as tarefas vinculadas a projetos'}
@@ -1247,70 +1285,14 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="xl:w-80 shrink-0 bg-[#121214] border border-white/5 rounded-2xl p-5 flex flex-col">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">
-                      {format(
-                        new Date(new Date().setDate(new Date().getDate() - new Date().getDay() + (quickCalendarOffset * 7))),
-                        'MMMM',
-                        { locale: ptBR }
-                      )}
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      {quickCalendarOffset !== 0 && (
-                        <button
-                          onClick={() => setQuickCalendarOffset(0)}
-                          className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 px-2 py-1 rounded hover:bg-white/5 transition-colors"
-                          title="Voltar para a semana atual"
-                        >
-                          Ir até hoje
-                        </button>
-                      )}
-                      <button onClick={() => setQuickCalendarOffset(prev => prev - 1)} className="p-1 hover:bg-white/5 rounded text-zinc-400 hover:text-white transition-colors">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                      </button>
-                      <button onClick={() => setQuickCalendarOffset(prev => prev + 1)} className="p-1 hover:bg-white/5 rounded text-zinc-400 hover:text-white transition-colors">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-7 gap-2 text-center text-[10px] mb-2">
-                    <span className="text-zinc-600">D</span><span className="text-zinc-600">S</span><span className="text-zinc-600">T</span><span className="text-zinc-600">Q</span><span className="text-zinc-600">Q</span><span className="text-zinc-600 font-bold">S</span><span className="text-zinc-600 font-bold">S</span>
-                  </div>
-                  <div className="grid grid-cols-7 gap-1">
-                    {Array.from({ length: 7 }).map((_, i) => {
-                      const d = new Date();
-                      d.setDate(d.getDate() - d.getDay() + i + (quickCalendarOffset * 7)); // start from Sunday
-                      const isTodayDate = isToday(d);
-                      return (
-                        <div 
-                          key={i} 
-                          onClick={() => {
-                            setSelectedDateFilter(d);
-                            setActiveTab('inbox');
-                          }}
-                          className={`aspect-square flex items-center justify-center text-xs rounded-lg cursor-pointer transition-colors ${
-                            isTodayDate
-                              ? 'bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-600/20'
-                              : selectedDateFilter && isSameDay(d, selectedDateFilter)
-                              ? 'bg-white/10 text-white font-bold border border-white/20'
-                              : 'text-zinc-400 hover:bg-white/5'
-                          }`}
-                        >
-                          {format(d, 'd')}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {selectedDateFilter && (
-                    <button 
-                      onClick={() => setSelectedDateFilter(null)}
-                      className="mt-4 text-xs text-indigo-400 hover:text-indigo-300 w-full text-center transition-colors"
-                    >
-                      Limpar filtro de data
-                    </button>
-                  )}
-                </div>
+                <QuickCalendar
+                  offset={quickCalendarOffset}
+                  onOffsetChange={setQuickCalendarOffset}
+                  selectedDate={selectedDateFilter}
+                  onSelectDate={(d) => { setSelectedDateFilter(d); setActiveTab('inbox'); }}
+                  onClear={() => setSelectedDateFilter(null)}
+                  onHelp={() => setIsQuickCalendarHelpOpen(true)}
+                />
               </div>
             )}
 
@@ -1334,7 +1316,7 @@ export default function App() {
 
             {activeTab === 'archived' ? (
               <ArchivedView
-                tasks={archivedTasks}
+                tasks={hideProjectTasks(archivedTasks)}
                 onUnarchive={handleUnarchiveTask}
                 onClickTask={handleEditTask}
                 onDeleteMany={handleDeleteArchived}
@@ -1343,7 +1325,7 @@ export default function App() {
 
             {activeTab === 'agenda' ? (
               <AgendaView
-                tasks={activeTasks.filter(matchesCommonFilters)}
+                tasks={hideProjectTasks(activeTasks).filter(matchesCommonFilters)}
                 onEditTask={handleEditTask}
                 onCreateAt={(date, hour) => handleNewTaskAtDate(date, hour)}
               />
@@ -1351,7 +1333,7 @@ export default function App() {
 
             {activeTab === 'list' ? (
               <TaskListView
-                tasks={activeTasks.filter(matchesCommonFilters)}
+                tasks={hideProjectTasks(activeTasks).filter(matchesCommonFilters)}
                 onView={handleViewTask}
                 onEdit={handleEditTask}
                 onToggle={handleToggleTask}
@@ -1363,7 +1345,7 @@ export default function App() {
             ) : null}
 
             {activeTab === 'stats' ? (
-              <StatsView tasks={reportTasks} />
+              <StatsView tasks={hideProjectTasks(reportTasks)} />
             ) : null}
 
             {activeTab === 'team' ? (
@@ -1407,7 +1389,7 @@ export default function App() {
 
             {activeTab === 'trash' ? (
               <TrashView
-                tasks={deletedTasks}
+                tasks={hideProjectTasks(deletedTasks)}
                 onRestore={handleRestoreTask}
                 onDeletePermanent={handleDeletePermanent}
                 onEmptyTrash={handleEmptyTrash}
@@ -1424,7 +1406,8 @@ export default function App() {
                     selectedDate={selectedDate}
                     onSelectDate={(d) => setSelectedDate(d)}
                     onSelectTask={handleViewTask}
-                    tasks={activeTasks}
+                    tasks={hideProjectTasks(activeTasks)}
+                    onHelp={() => setIsCalendarHelpOpen(true)}
                   />
                 </div>
 
@@ -1897,11 +1880,22 @@ export default function App() {
         onClose={() => setIsShortcutsOpen(false)}
       />
 
+      <CalendarHelpModal
+        isOpen={isCalendarHelpOpen}
+        onClose={() => setIsCalendarHelpOpen(false)}
+      />
+
+      <QuickCalendarHelpModal
+        isOpen={isQuickCalendarHelpOpen}
+        onClose={() => setIsQuickCalendarHelpOpen(false)}
+      />
+
       <PomodoroModal
         isOpen={isPomodoroOpen}
         onClose={() => setIsPomodoroOpen(false)}
+        pomo={pomo}
         tasks={activeTasks.filter(t => !t.completed)}
-        onLogTime={(taskId, minutes) => handleLogTime(taskId, minutes, 'pomodoro')}
+        projectName={(id) => projectById(id)?.name}
       />
 
       <CommandPalette

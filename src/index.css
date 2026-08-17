@@ -27,6 +27,46 @@
     background: rgba(255, 255, 255, 0.2);
   }
 
+  /* Barra das áreas de código (textarea do anexo e o preview <pre>).
+     A `custom-scrollbar` de 4px é boa para painéis, mas fica difícil de pegar
+     numa área que se rola de verdade — e sem estilo o Chromium desenha a barra
+     nativa, que destoa do resto do app. O `border` transparente com
+     `background-clip: content-box` afina o polegar sem estreitar a pista. */
+  .code-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .code-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .code-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .code-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    background-clip: content-box;
+  }
+  /* Sem isto o quadradinho entre as duas barras fica com o cinza padrão. */
+  .code-scrollbar::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* O spinner de `input[type=number]` é desenhado pelo Chromium: cinza fixo,
+     minúsculo e alheio ao tema. Onde precisamos de passo, damos botões nossos
+     (ver o stepper do Modo foco); o campo continua digitável. */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
@@ -153,6 +193,7 @@
 .light .bg-\[\#0e0e10\] { background-color: #fbfbfc; }
 .light .bg-\[\#121214\] { background-color: #ffffff; }
 .light .bg-\[\#151517\] { background-color: #f0f0f2; }
+.light .hover\:bg-\[\#1d1d21\]:hover { background-color: #e4e4e8; }
 .light .bg-\[\#18181b\] { background-color: #ffffff; }
 .light .bg-zinc-950\/50 { background-color: rgba(255, 255, 255, 0.75); }
 .light .bg-black\/40 { background-color: rgba(0, 0, 0, 0.05); }
@@ -222,6 +263,10 @@
 .light .\[color-scheme\:dark\] { color-scheme: light; }
 .light .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); }
 .light .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.25); }
+/* A caixa de código continua escura no tema claro (bg-black/40), então o
+   polegar segue claro — escurecê-lo sumiria no fundo. */
+.light .code-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.22); background-clip: content-box; }
+.light .code-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.36); background-clip: content-box; }
 .light .board-fade { --board-fade: #f4f4f5; }
 .light .board-scrollbar::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.04); }
 .light .board-scrollbar::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); background-clip: content-box; }
@@ -247,6 +292,7 @@
 .theme-sepia .bg-\[\#0e0e10\] { background-color: #f7f2e8; } /* menus e tabela do Gantt */
 .theme-sepia .bg-\[\#121214\] { background-color: #faf6ee; } /* cards (elevados) */
 .theme-sepia .bg-\[\#151517\] { background-color: #ece5d8; } /* cabeçalhos agrupadores */
+.theme-sepia .hover\:bg-\[\#1d1d21\]:hover { background-color: #e0d7c6; } /* hover deles (opaco) */
 .theme-sepia .bg-\[\#18181b\] { background-color: #fdfaf3; } /* modais/inputs */
 .theme-sepia .bg-zinc-950\/50 { background-color: rgba(250, 246, 238, 0.82); }
 .theme-sepia .bg-black\/40 { background-color: rgba(92, 76, 50, 0.05); }
@@ -286,6 +332,8 @@
 /* --- Scrollbar ---------------------------------------------------------- */
 .theme-sepia .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(92, 76, 50, 0.18); }
 .theme-sepia .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(92, 76, 50, 0.3); }
+.theme-sepia .code-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 250, 240, 0.22); background-clip: content-box; }
+.theme-sepia .code-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 250, 240, 0.36); background-clip: content-box; }
 .theme-sepia .board-fade { --board-fade: #f2ece1; }
 .theme-sepia .board-scrollbar::-webkit-scrollbar-track { background: rgba(92, 76, 50, 0.05); }
 .theme-sepia .board-scrollbar::-webkit-scrollbar-thumb { background: rgba(92, 76, 50, 0.24); background-clip: content-box; }
