@@ -44,31 +44,33 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Popups nativos do Windows**: um lembrete antecipado (antecedência configurável por tarefa — de 10 min a 1 dia) e outro na hora exata do prazo.
 
 ### Visualizações
-- **Caixa de Entrada**: quadro principal de tarefas, com botão para **mostrar ou ocultar as tarefas de projetos** (a escolha fica salva).
+- **Caixa de Entrada**: quadro principal de tarefas, com **faixa de semana** para filtrar por dia (manual pelo `?`).
 - **Hoje**: tarefas com prazo para o dia atual.
-- **Calendário**: grade mensal com painel do dia selecionado (estilo Google/Notion).
+- **Calendário**: grade mensal com painel do dia selecionado (estilo Google/Notion), navegação animada e manual pelo `?`.
 - **Agenda**: grade semanal ou diária com horários na lateral (estilo Teams/Meet) — clique num bloco para editar ou num espaço vazio para criar.
 - **Lista**: todas as tarefas com seus dados, **ordenação por coluna** (título, status, criticidade, prazo) e **filtros salvos**.
 - **Relatórios**: KPIs e gráficos (concluídas por semana, pendentes por criticidade, tarefas por tag).
 - **Arquivados**: histórico das tarefas arquivadas, com colunas de **finalização** e arquivamento, seleção em massa e filtros por criticidade, tag, **mês e ano** de arquivamento.
+- **Tarefas de projetos**: botão no topo para **mostrar ou ocultar** o que pertence a projetos — vale em Caixa de Entrada, Hoje, Calendário, Agenda, Lista, Relatórios, Arquivados e Lixeira, e a escolha fica salva.
 - **Filtros** por texto, tag e criticidade; contador de tarefas **atrasadas** na barra lateral.
 - **Busca completa**: procura em título, descrição, tags, subtarefas, comentários, anexos, projeto, épico e responsável — cada palavra digitada precisa aparecer em algum desses campos. A caixa do topo ainda avisa quando o que você procura está nas **arquivadas** ou na **lixeira**.
 
 ### Produtividade
 - **Command Palette** (`Ctrl/Cmd + K`): busque ações e tarefas, e **crie tarefas em linguagem natural** ("pagar boleto amanhã 14h #casa !alta").
-- **Timer de foco (Pomodoro)** com ciclos de foco/pausa e notificação ao terminar.
+- **Modo foco**: Pomodoro com durações ajustáveis ou **cronômetro livre**, apontando o tempo direto na tarefa. Tem **ciclos automáticos**, **avisos sonoros** e continua rodando numa **barrinha no topo** quando você fecha o painel — dá para usar o app sem perder a sessão.
 - **Atalhos de teclado** com guia acessível pelo header ou tecla `?`; menu do app no logo.
 - **Gerenciador de tags**: crie tags e edite suas cores, com **escopo global ou por projeto** — tag de projeto não polui o contexto dos outros.
 - **Subtarefas no card**: clique no contador para abrir o checklist e marcar sem abrir a tarefa.
 - **Menu do botão direito** sobre a tarefa: **quick add de subtarefa** (Enter cria e o menu segue aberto para encadear várias), além de ver, editar, concluir, comentar, **arquivar** (só nas finalizadas), salvar como modelo, lembretes e excluir.
-- **Mini calendário** semanal com atalho "Ir até hoje".
+- **Mini calendário** semanal com atalho "Ir até hoje", navegação animada e manual próprio.
 
 ### Sistema (Configurações)
-- **Tema** claro, escuro ou **sistema** (segue o Windows).
+- **Tema** claro, escuro, **sépia** ou **sistema** (segue o Windows).
 - **Iniciar com o Windows** e **Iniciar minimizado**.
 - **Fechar para a bandeja** (opcional): o X esconde na bandeja ou fecha o app.
 - **Bandeja do sistema** com menu (Abrir, Verificar atualizações, Sair).
 - **Captura rápida global**: `Ctrl+Shift+Espaço` (configurável) abre uma caixa por cima de qualquer programa para criar tarefa em linguagem natural, sem trazer a janela para frente.
+- **Configurações em trilha lateral**: navegação por seções em vez de uma lista rolante única.
 - **Backup automático**: uma cópia por dia na pasta que você escolher, com rotação das N últimas e restauração pela própria tela. Detecta **OneDrive** e **Google Drive** e oferece a pasta com um clique — o serviço de nuvem cuida de levar o arquivo para fora do PC.
 - **Backup manual**: exporte e importe todos os dados em JSON (tarefas, tags, projetos, épicos, personas e modelos); acesso rápido à pasta do banco de dados.
 - **Anexos em disco**: imagens e arquivos ficam em `userData/attachments` em vez de inchar o banco — anexos antigos são migrados sozinhos na primeira abertura.
