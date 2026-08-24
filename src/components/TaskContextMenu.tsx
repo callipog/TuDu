@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { Task } from '../types';
 import { Pencil, Eye, Check, RotateCcw, Bell, BellOff, Trash2, Plus, ListChecks, MessageSquare, FileStack, Archive } from 'lucide-react';
 
+/** Teto do campo de subtarefa: ~5 linhas. Passou disso, rola por dentro. */
+const MAX_ALTURA_CAMPO = 104;
+
 export interface TaskMenuState {
   x: number;
   y: number;
@@ -85,7 +88,14 @@ export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComple
     const el = inputRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 104)}px`;
+    // `scrollHeight` conta o conteúdo e o padding, mas não as bordas. Sem
+    // somá-las a caixa nasce 2px curta, o conteúdo "transborda" por essa
+    // sobra e o Chromium desenha a barra de rolagem o tempo todo.
+    const bordas = el.offsetHeight - el.clientHeight;
+    const cheio = el.scrollHeight + bordas;
+    el.style.height = `${Math.min(cheio, MAX_ALTURA_CAMPO)}px`;
+    // Barra só existe depois do teto: enquanto o campo cresce, nada aparece.
+    el.style.overflowY = cheio > MAX_ALTURA_CAMPO ? 'auto' : 'hidden';
     ajustarPosicao();
   }, [subtaskTitle, ajustarPosicao]);
 
@@ -140,7 +150,7 @@ export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComple
               if (e.key === 'Enter') { e.preventDefault(); submitSubtask(); }
             }}
             placeholder="Nova subtarefa…"
-            className="flex-1 min-w-0 resize-none overflow-y-auto break-words bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs leading-snug text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors"
+            className="custom-scrollbar flex-1 min-w-0 resize-none break-words bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs leading-snug text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors"
           />
           <button
             onClick={(e) => { e.stopPropagation(); submitSubtask(); }}

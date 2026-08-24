@@ -567,11 +567,13 @@ export default function App() {
   /** Marca/desmarca uma subtarefa direto no card, sem abrir a tarefa. */
   async function handleToggleSubtask(task: Task, subtaskId: string) {
     const subtasks = (task.subtasks ?? []).map(s => s.id === subtaskId ? { ...s, done: !s.done } : s);
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, subtasks } : t));
+    // applyTaskPatch e não setTasks: o checklist também é clicável dentro do
+    // detalhe, que segura a própria cópia da tarefa e precisa acompanhar.
+    applyTaskPatch(task.id, { subtasks });
     try {
       await taskService.updateTask(task.id, { subtasks });
     } catch {
-      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, subtasks: task.subtasks } : t));
+      applyTaskPatch(task.id, { subtasks: task.subtasks });
       showToast('Não foi possível salvar a subtarefa.');
     }
   }
@@ -1862,6 +1864,7 @@ export default function App() {
         onDeleteComment={handleDeleteComment}
         onAddTime={(task, minutes) => handleLogTime(task.id, minutes, 'manual')}
         onDeleteTime={(task, entryId) => handleRemoveTimeEntry(task.id, entryId)}
+        onToggleSubtask={handleToggleSubtask}
         focusComments={detailFocusComments}
       />
 

@@ -23,6 +23,8 @@ interface TaskDetailModalProps {
   /** Lançamento manual de tempo — também liberado com a tarefa finalizada. */
   onAddTime?: (task: Task, minutes: number) => void;
   onDeleteTime?: (task: Task, entryId: string) => void;
+  /** Marca/desmarca um item do checklist sem sair do detalhe. */
+  onToggleSubtask?: (task: Task, subtaskId: string) => void;
   /** Abre com o campo de comentário focado (vindo do menu de contexto). */
   focusComments?: boolean;
 }
@@ -82,7 +84,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, project, epic, statusText, onAddComment, onDeleteComment, onAddTime, onDeleteTime, focusComments }: TaskDetailModalProps) {
+export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, project, epic, statusText, onAddComment, onDeleteComment, onAddTime, onDeleteTime, onToggleSubtask, focusComments }: TaskDetailModalProps) {
   const [comment, setComment] = useState('');
   const [horas, setHoras] = useState('');
   const [minutos, setMinutos] = useState('');
@@ -221,14 +223,35 @@ export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, proje
         {subtaskTotal > 0 && (
           <Field label={`Subtarefas · ${subtaskDone}/${subtaskTotal}`}>
             <div className="space-y-1.5 mt-1">
-              {task.subtasks!.map(sub => (
-                <div key={sub.id} className="flex items-center gap-2">
-                  <span className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center ${sub.done ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-600'}`}>
+              {task.subtasks!.map(sub => {
+                const caixa = (
+                  <span className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                    sub.done
+                      ? 'bg-indigo-500 border-indigo-500 text-white'
+                      : `border-zinc-600${onToggleSubtask ? ' group-hover/sub:border-indigo-400' : ''}`
+                  }`}>
                     {sub.done && <Check size={10} strokeWidth={4} />}
                   </span>
-                  <span className={`text-sm ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`}>{sub.title}</span>
-                </div>
-              ))}
+                );
+                const texto = (
+                  <span className={`text-sm text-left break-words ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`}>{sub.title}</span>
+                );
+                // Sem handler (ex.: detalhe só de leitura) segue como estava.
+                if (!onToggleSubtask) {
+                  return <div key={sub.id} className="flex items-center gap-2">{caixa}{texto}</div>;
+                }
+                return (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => onToggleSubtask(task, sub.id)}
+                    aria-pressed={sub.done}
+                    className="group/sub w-full flex items-center gap-2 text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-white/5 transition-colors"
+                  >
+                    {caixa}{texto}
+                  </button>
+                );
+              })}
             </div>
           </Field>
         )}
