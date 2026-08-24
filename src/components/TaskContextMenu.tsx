@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Task } from '../types';
 import { Pencil, Eye, Check, RotateCcw, Bell, BellOff, Trash2, Plus, ListChecks, MessageSquare, FileStack, Archive } from 'lucide-react';
 
@@ -28,7 +28,7 @@ interface TaskContextMenuProps {
 
 export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComplete, onToggleNotifications, onDelete, onAddSubtask, onComment, onSaveTemplate, onArchive }: TaskContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [subtaskTitle, setSubtaskTitle] = useState('');
   // Quantas foram criadas nesta sessão do menu — o menu fica aberto para
@@ -45,21 +45,30 @@ export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComple
   useEffect(() => {
     if (!state) return;
     const close = () => onClose();
+    // O campo de texto emite `scroll` próprio quando o conteúdo passa da
+    // área visível — em captura isso chegava aqui e fechava o menu no meio
+    // da digitação. Só fecha quando a rolagem vem de fora do menu.
+    const onScroll = (e: Event) => {
+      const alvo = e.target as Node | null;
+      if (alvo && ref.current?.contains(alvo)) return;
+      onClose();
+    };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('mousedown', close);
-    window.addEventListener('scroll', close, true);
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', close);
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('mousedown', close);
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', close);
       window.removeEventListener('keydown', onKey);
     };
   }, [state, onClose]);
 
-  // Mantém o menu dentro da viewport.
-  useLayoutEffect(() => {
+  // Mantém o menu dentro da viewport. Como o campo de subtarefa cresce
+  // conforme o texto, isso precisa rodar de novo a cada mudança de altura.
+  const ajustarPosicao = useCallback(() => {
     if (!state || !ref.current) return;
     const { offsetWidth: w, offsetHeight: h } = ref.current;
     const pad = 8;
@@ -67,6 +76,18 @@ export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComple
     const y = Math.min(state.y, window.innerHeight - h - pad);
     setPos({ x: Math.max(pad, x), y: Math.max(pad, y) });
   }, [state]);
+
+  useLayoutEffect(() => { ajustarPosicao(); }, [ajustarPosicao]);
+
+  // Auto-altura do campo: cresce até 5 linhas e só depois rola por dentro,
+  // para o usuário enxergar o título inteiro enquanto digita.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 104)}px`;
+    ajustarPosicao();
+  }, [subtaskTitle, ajustarPosicao]);
 
   if (!state) return null;
   const task = state.task;
@@ -96,7 +117,7 @@ export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComple
       style={{ left: pos.x, top: pos.y }}
       onMouseDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
-      className="fixed z-[100] w-60 py-1.5 bg-[#18181b] border border-white/10 rounded-xl shadow-2xl shadow-black/40"
+      className="fixed z-[100] w-72 py-1.5 bg-[#18181b] border border-white/10 rounded-xl shadow-2xl shadow-black/40"
     >
       <div className="px-3 pb-1.5 mb-1 border-b border-white/5">
         <p className="text-xs font-medium text-white truncate">{task.title}</p>
@@ -105,17 +126,21 @@ export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComple
       {/* Quick add de subtarefa: Enter cria e o menu continua aberto para
           engatar a próxima. */}
       <div className="px-3 py-1.5" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-1.5">
-          <input
+        <div className="flex items-end gap-1.5">
+          <textarea
             ref={inputRef}
+            rows={1}
             value={subtaskTitle}
-            onChange={(e) => setSubtaskTitle(e.target.value)}
+            /* Colar texto de várias linhas vira uma linha só. */
+            onChange={(e) => setSubtaskTitle(e.target.value.replace(/\s+/g, ' '))}
             onKeyDown={(e) => {
               e.stopPropagation();
+              // Enter cria; Shift+Enter não quebra linha porque o título da
+              // subtarefa é sempre de uma linha só.
               if (e.key === 'Enter') { e.preventDefault(); submitSubtask(); }
             }}
             placeholder="Nova subtarefa…"
-            className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors"
+            className="flex-1 min-w-0 resize-none overflow-y-auto break-words bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs leading-snug text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors"
           />
           <button
             onClick={(e) => { e.stopPropagation(); submitSubtask(); }}
