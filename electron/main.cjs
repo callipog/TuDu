@@ -30,9 +30,11 @@ if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID);
 }
 
-const iconPath = isDev
-  ? path.join(__dirname, '../public/icon.png')
-  : path.join(__dirname, '../dist/icon.png');
+const assetsDir = isDev ? path.join(__dirname, '../public') : path.join(__dirname, '../dist');
+// No Windows o .ico traz a versão encorpada do símbolo para 16–48 px.
+const iconPath = path.join(assetsDir, process.platform === 'win32' ? 'icon.ico' : 'icon.png');
+// Bandeja: 16 px (+ @2x carregado automaticamente em telas HiDPI).
+const trayIconPath = path.join(assetsDir, 'tray-icon.png');
 
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 
@@ -93,17 +95,6 @@ function createSplash() {
   });
   splash.loadFile(path.join(__dirname, 'splash.html'));
   splashStart = Date.now();
-
-  // Injeta o ícone real do app (base64) para não depender de caminho relativo.
-  splash.webContents.on('did-finish-load', () => {
-    try {
-      const b64 = fs.readFileSync(iconPath).toString('base64');
-      splash.webContents.executeJavaScript(
-        `(function(){var el=document.getElementById('app-logo');var fb=document.getElementById('logo-fallback');` +
-        `if(el){el.src='data:image/png;base64,${b64}';el.style.display='block';}if(fb){fb.style.display='none';}})();`
-      ).catch(() => {});
-    } catch (e) { /* mantém o fallback */ }
-  });
 }
 
 function closeSplash() {
@@ -432,11 +423,8 @@ function startBridgeIfEnabled() {
 }
 
 function createTray() {
-  let image = nativeImage.createFromPath(iconPath);
-  if (!image.isEmpty()) {
-    image = image.resize({ width: 16, height: 16 });
-  }
-  tray = new Tray(image.isEmpty() ? iconPath : image);
+  const image = nativeImage.createFromPath(trayIconPath);
+  tray = new Tray(image.isEmpty() ? nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }) : image);
   tray.setToolTip('TuDu');
 
   const contextMenu = Menu.buildFromTemplate([

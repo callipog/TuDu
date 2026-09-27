@@ -1,7 +1,7 @@
 {
   "name": "tudu",
   "private": true,
-  "version": "1.10.2",
+  "version": "1.10.3",
   "type": "module",
   "description": "Gerenciador de tarefas desktop com notificações, agenda e calendário.",
   "author": {
@@ -43,7 +43,7 @@
       "icon": "public/icon.png"
     },
     "win": {
-      "icon": "public/icon.png"
+      "icon": "public/icon.ico"
     },
     "linux": {
       "icon": "public/icon.png"

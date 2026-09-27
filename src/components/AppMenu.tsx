@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Plus, Command, FolderKanban, Users, Tag as TagIcon, Timer, Settings, Keyboard, RefreshCw, Github, FileStack } from 'lucide-react';
+import { TuduLockup } from './TuduLogo';
 
 interface AppMenuProps {
   onNewTask: () => void;
@@ -44,10 +45,9 @@ export function AppMenu(props: AppMenuProps) {
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-white/5 transition-colors w-full"
       >
-        <div className="w-8 h-8 flex items-center justify-center shrink-0">
-          <img src="icon.png" alt="TuDu Logo" className="w-full h-full object-contain" />
-        </div>
-        <h1 className="text-lg font-semibold tracking-tight whitespace-nowrap flex-1 text-left">TuDu</h1>
+        <h1 className="flex-1 flex items-center h-8 min-w-0">
+          <TuduLockup height={22} className="shrink-0" />
+        </h1>
         <ChevronDown size={16} className={`text-zinc-500 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 

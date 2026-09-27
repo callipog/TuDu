@@ -1,5 +1,6 @@
 import React from 'react';
 import { Minus, Square, X } from 'lucide-react';
+import { TuduMark } from './TuduLogo';
 
 export const TitleBar: React.FC = () => {
   return (
@@ -8,9 +9,7 @@ export const TitleBar: React.FC = () => {
       style={{ WebkitAppRegion: 'drag' } as any}
     >
       <div className="flex items-center px-4 gap-2">
-        <div className="w-4 h-4 flex items-center justify-center shrink-0">
-          <img src="icon.png" alt="Logo" className="w-full h-full object-contain opacity-50" />
-        </div>
+        <TuduMark size={11} className="shrink-0 text-zinc-500" />
         <span className="text-[11px] text-zinc-500 font-medium tracking-wide">TuDu</span>
       </div>
 

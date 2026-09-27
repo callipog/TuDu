@@ -1,0 +1,34 @@
+// Logo do TuDu (kit de marca): um ponto e um traço, a tarefa pendente e a feita.
+// O traço e o nome usam currentColor, então herdam a cor do tema (claro, escuro, sépia).
+// O ponto é sempre violeta, exceto na versão mono.
+import React from 'react';
+
+const VIOLET = '#7C5CFF';
+
+type MarkProps = { size?: number; mono?: boolean; title?: string } & React.SVGProps<SVGSVGElement>;
+
+/** Símbolo. `size` é a altura; a largura segue a proporção 67 × 50. */
+export function TuduMark({ size = 32, mono = false, title = 'TuDu', ...rest }: MarkProps) {
+  return (
+    <svg viewBox="17 25 67 50" width={(size * 67) / 50} height={size} role="img" aria-label={title} {...rest}>
+      <path d="M42 67L76 33" fill="none" stroke="currentColor" strokeWidth={16} strokeLinecap="round" />
+      <circle cx={25} cy={50} r={8} fill={mono ? 'currentColor' : VIOLET} />
+    </svg>
+  );
+}
+
+const WORDMARK_PATH =
+  'M315 7Q240 7 191.5 -12.5Q143 -32 119.0 -78.5Q95 -125 95 -204L96 -696H226L225 -195Q225 -155 246.5 -133.5Q268 -112 308 -112H393V7ZM9 -441V-543H393V-441Z M650.0 17Q556.0 17 504.5 -45.0Q453.0 -107 453.0 -229V-544H592.0V-217Q592.0 -167 620.0 -137.5Q648.0 -108 696.0 -108Q744.0 -108 774.5 -139.0Q805.0 -170 805.0 -223V-544H944.0V0H834.0V-231H845.0Q845.0 -149 824.0 -94.0Q803.0 -39 761.0 -11.0Q719.0 17 656.0 17Z M1284.0 18Q1227.0 18 1179.0 -3.0Q1131.0 -24 1096.0 -62.0Q1061.0 -100 1042.0 -150.5Q1023.0 -201 1023.0 -260V-281Q1023.0 -339 1041.5 -390.0Q1060.0 -441 1093.5 -479.0Q1127.0 -517 1174.5 -538.5Q1222.0 -560 1280.0 -560Q1344.0 -560 1392.5 -532.5Q1441.0 -505 1470.0 -450.0Q1499.0 -395 1502.0 -312L1461.0 -360V-730H1600.0V0H1490.0V-231H1514.0Q1511.0 -148 1480.0 -92.5Q1449.0 -37 1398.5 -9.5Q1348.0 18 1284.0 18ZM1315.0 -99Q1356.0 -99 1390.0 -117.5Q1424.0 -136 1444.5 -171.5Q1465.0 -207 1465.0 -255V-295Q1465.0 -343 1444.0 -375.5Q1423.0 -408 1389.0 -425.5Q1355.0 -443 1315.0 -443Q1270.0 -443 1235.5 -421.5Q1201.0 -400 1181.5 -361.0Q1162.0 -322 1162.0 -270Q1162.0 -218 1182.0 -179.5Q1202.0 -141 1236.5 -120.0Q1271.0 -99 1315.0 -99Z M1898.0 17Q1804.0 17 1752.5 -45.0Q1701.0 -107 1701.0 -229V-544H1840.0V-217Q1840.0 -167 1868.0 -137.5Q1896.0 -108 1944.0 -108Q1992.0 -108 2022.5 -139.0Q2053.0 -170 2053.0 -223V-544H2192.0V0H2082.0V-231H2093.0Q2093.0 -149 2072.0 -94.0Q2051.0 -39 2009.0 -11.0Q1967.0 17 1904.0 17Z';
+
+/** Símbolo + nome "tudu" (Sora já convertida em contorno). `height` é a altura total. */
+export function TuduLockup({ height = 24, title = 'TuDu', ...rest }: { height?: number; title?: string } & React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 -730 3468 748" width={(height * 3468) / 748} height={height} role="img" aria-label={title} {...rest}>
+      <g transform="translate(-248.2 -1095.0) scale(14.6)">
+        <path d="M42 67L76 33" fill="none" stroke="currentColor" strokeWidth={16} strokeLinecap="round" />
+        <circle cx={25} cy={50} r={8} fill={VIOLET} />
+      </g>
+      <path transform="translate(1275.8 0)" fill="currentColor" d={WORDMARK_PATH} />
+    </svg>
+  );
+}
