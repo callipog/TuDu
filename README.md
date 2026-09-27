@@ -1,7 +1,9 @@
 <p align="center">
-  <img src="https://github.com/callipog/TuDu/blob/main/public/icon.png" alt="Logo do TuDu" width="128px" height="128px">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/tudu-lockup-horizontal-on-dark.svg">
+    <img src="docs/brand/tudu-lockup-horizontal.svg" alt="TuDu" height="64">
+  </picture>
 </p>
-<h1 align="center">TuDu</h1>
 
 <p align="center"><a href="https://github.com/callipog/TuDu/releases" target="_blank"><img src="https://img.shields.io/github/v/release/callipog/TuDu" alt="Latest release" /></a> <a href="https://github.com/callipog/TuDu/releases" target="_blank"></a></p>
 
@@ -107,4 +109,6 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 
 ## 🎨 Design
 
-O projeto adota uma filosofia "Dark Mode First", utilizando tons de zinco e contrastes coloridos (esmeralda, âmbar, rosa, índigo) para guiar a atenção do usuário aos elementos de prioridade e status das tarefas.
+**Identidade visual:** um ponto e um traço, a tarefa pendente e a tarefa feita — um check reduzido ao essencial. O traço segue a cor do tema e o ponto é sempre violeta (`#7C5CFF`); o nome "tudu" usa a fonte Sora, em minúsculas. O mesmo símbolo aparece no ícone do app, na bandeja, no splash e no menu.
+
+A interface adota uma filosofia "Dark Mode First", utilizando tons de zinco e contrastes coloridos (esmeralda, âmbar, rosa, índigo) para guiar a atenção do usuário aos elementos de prioridade e status das tarefas.
