@@ -57,6 +57,14 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 - **Filtros** por texto, tag e criticidade; contador de tarefas **atrasadas** na barra lateral.
 - **Busca completa**: procura em título, descrição, tags, subtarefas, comentários, anexos, projeto, épico e responsável — cada palavra digitada precisa aparecer em algum desses campos. A caixa do topo ainda avisa quando o que você procura está nas **arquivadas** ou na **lixeira**.
 
+### 🏝️ Ilha na área de trabalho
+- Uma pílula do TuDu que fica **atrás das janelas**: aparece quando a área de trabalho está à vista e some quando você abre outro app. Um alfinete prende ela por cima.
+- Fechada, mostra **uma coisa por vez**, escolhida por prioridade: lembrete vencido, música que acabou de trocar, timer de foco, próxima tarefa ou, no repouso, data e hora.
+- Passando o mouse, abre um **painel com seções** — Hoje, Player, Timer de foco, Lembretes e Nova tarefa — com setas e pontos para navegar. Dá para concluir e adiar lembretes, controlar o foco e criar tarefas sem abrir o app.
+- **Player** do que estiver tocando no Windows (Spotify, YouTube no navegador, VLC…), com capa, tempo restante e controles.
+- Só o **lembrete crítico** sobe por cima das outras janelas; os demais esperam você voltar.
+- Tudo ajustável em Configurações › Ilha: posição (8 cantos), seções, abrir no hover, fixar e pausar a música no fim do ciclo de foco.
+
 ### Produtividade
 - **Command Palette** (`Ctrl/Cmd + K`): busque ações e tarefas, e **crie tarefas em linguagem natural** ("pagar boleto amanhã 14h #casa !alta").
 - **Modo foco**: Pomodoro com durações ajustáveis ou **cronômetro livre**, apontando o tempo direto na tarefa. Tem **ciclos automáticos**, **avisos sonoros** e continua rodando numa **barrinha no topo** quando você fecha o painel — dá para usar o app sem perder a sessão.
