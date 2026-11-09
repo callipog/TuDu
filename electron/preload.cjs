@@ -71,6 +71,12 @@ contextBridge.exposeInMainWorld('tudu', {
     },
   },
 
+  // Ilha: o renderer publica o retrato das fontes; o processo principal resolve.
+  island: {
+    publish: (snapshot) => ipcRenderer.send('island:sources', snapshot),
+    state: () => ipcRenderer.invoke('island:state'),
+  },
+
   updates: {
     install: () => ipcRenderer.invoke('update:install'),
     onProgress: (cb) => {

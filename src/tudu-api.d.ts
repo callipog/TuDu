@@ -1,3 +1,5 @@
+import type { IslandSnapshot } from './services/islandSnapshot';
+
 export {};
 
 /** Estado do backup automático em pasta. */
@@ -79,6 +81,11 @@ declare global {
         set: (options: { enabled?: boolean; accelerator?: string }) => Promise<CaptureConfig>;
         saved: (title: string) => void;
         onText: (cb: (text: string) => void) => () => void;
+      };
+      island: {
+        publish: (snapshot: IslandSnapshot) => void;
+        /** Estado resolvido pela fila de prioridade (electron/island-queue.cjs). */
+        state: () => Promise<unknown>;
       };
       updates: {
         install: () => Promise<void>;

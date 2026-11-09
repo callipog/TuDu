@@ -25,6 +25,7 @@ import { CalendarHelpModal } from './components/CalendarHelpModal';
 import { QuickCalendar } from './components/QuickCalendar';
 import { QuickCalendarHelpModal } from './components/QuickCalendarHelpModal';
 import { usePomodoro } from './hooks/usePomodoro';
+import { useIslandSources } from './hooks/useIslandSources';
 import { ToastHost, Toast } from './components/ToastHost';
 import { CommandPalette } from './components/CommandPalette';
 import { ProjectView } from './components/ProjectView';
@@ -220,6 +221,9 @@ export default function App() {
   useEffect(() => {
     notificationService.setTasks(tasks);
   }, [tasks]);
+
+  // Ilha: publica tarefas, foco e lembretes vencidos para o processo principal.
+  useIslandSources(tasks, pomo);
 
   // Atalhos de teclado (inativos ao digitar ou com modal aberto).
   useEffect(() => {

@@ -1,7 +1,14 @@
 import { Task } from '../types';
 import { format, parseISO } from 'date-fns';
+import { PendingReminder, stillPending } from './islandSnapshot';
+
+export type { PendingReminder };
 
 const FIRED_KEY = 'tudu_fired_notifications';
+// Lembretes que venceram e ainda não foram resolvidos — é o que a ilha mostra.
+// O toast do Windows some sozinho; estes ficam até a tarefa sair do caminho.
+const PENDING_KEY = 'tudu_island_pending';
+const MAX_PENDING = 50;
 // Janela de "catch-up": eventos que passaram há mais que isso ao abrir o app
 // são marcados como disparados silenciosamente (evita spam de tarefas antigas).
 const GRACE_MS = 6 * 60 * 60 * 1000;
@@ -10,6 +17,30 @@ export const DEFAULT_REMINDER_MINUTES = 30;
 
 let currentTasks: Task[] = [];
 let intervalId: ReturnType<typeof setInterval> | null = null;
+
+const pendingListeners = new Set<() => void>();
+
+function loadPending(): PendingReminder[] {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) return list;
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function savePending(list: PendingReminder[]) {
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(list.slice(0, MAX_PENDING)));
+  } catch {
+    // ignore
+  }
+  pendingListeners.forEach(cb => cb());
+}
 
 function isElectron(): boolean {
   return typeof window !== 'undefined' && !!window.tudu;
@@ -57,24 +88,27 @@ function sendNotification(title: string, body: string) {
 /**
  * Avalia um evento agendado. Se já passou da hora e ainda não disparou:
  * dispara a notificação (se dentro da janela de catch-up) e marca como disparado.
- * Retorna true se o conjunto `fired` foi alterado.
+ * Devolve 'sent' quando notificou, 'silent' quando só marcou (catch-up de
+ * evento antigo) e null quando não fez nada.
  */
-function maybeFire(fired: Set<string>, key: string, eventTime: number, now: number, title: string, body: string): boolean {
-  if (fired.has(key)) return false;
+function maybeFire(fired: Set<string>, key: string, eventTime: number, now: number, title: string, body: string): 'sent' | 'silent' | null {
+  if (fired.has(key)) return null;
   const diff = now - eventTime;
-  if (diff < 0) return false; // ainda não chegou a hora
-  if (diff <= GRACE_MS) {
-    sendNotification(title, body);
-  }
+  if (diff < 0) return null; // ainda não chegou a hora
   // Marca como disparado mesmo fora da janela (catch-up silencioso)
   fired.add(key);
-  return true;
+  if (diff <= GRACE_MS) {
+    sendNotification(title, body);
+    return 'sent';
+  }
+  return 'silent';
 }
 
 function tick() {
   const now = Date.now();
   const fired = loadFired();
   let changed = false;
+  const novos: PendingReminder[] = [];
 
   for (const t of currentTasks) {
     if (!t.notificationsEnabled || !t.dueDate || t.completed || t.archived) continue;
@@ -86,7 +120,8 @@ function tick() {
     const reminderTime = due - reminderMinutes * 60 * 1000;
     const horario = format(parseISO(t.dueDate), 'dd/MM · HH:mm');
 
-    // Lembrete antecipado
+    // Lembrete antecipado. Na ilha ele é o "próximo compromisso", não um
+    // lembrete pendente: ainda não venceu nada.
     changed = maybeFire(
       fired,
       `${t.id}:reminder:${t.dueDate}`,
@@ -94,20 +129,47 @@ function tick() {
       now,
       `Lembrete: ${t.title}`,
       `Vence em ${reminderMinutes} min (${horario}).`
-    ) || changed;
+    ) !== null || changed;
 
     // Na hora exata do deadline
-    changed = maybeFire(
+    const dueKey = `${t.id}:due:${t.dueDate}`;
+    const noPrazo = maybeFire(
       fired,
-      `${t.id}:due:${t.dueDate}`,
+      dueKey,
       due,
       now,
       `Prazo agora: ${t.title}`,
       `A tarefa vence agora (${horario}).`
-    ) || changed;
+    );
+    changed = noPrazo !== null || changed;
+    // Só vira pendente o que de fato notificou: o catch-up silencioso de prazos
+    // antigos não deve encher a ilha ao abrir o app.
+    if (noPrazo === 'sent') {
+      novos.push({ id: dueKey, taskId: t.id, title: t.title, urgency: t.urgency, firedAt: now });
+    }
   }
 
   if (changed) saveFired(fired);
+  updatePending(novos);
+}
+
+/**
+ * Junta os recém-vencidos à lista e tira os que não fazem mais sentido. A
+ * limpeza só acontece com tarefas carregadas: na abertura o app passa por um
+ * instante com a lista vazia, e isso não pode apagar os pendentes.
+ */
+function updatePending(novos: PendingReminder[]) {
+  const atual = loadPending();
+  let lista = atual;
+  if (currentTasks.length > 0) {
+    const porId = new Map(currentTasks.map(t => [t.id, t]));
+    lista = atual.filter(p => stillPending(p, porId.get(p.taskId)));
+  }
+  const ids = new Set(lista.map(p => p.id));
+  for (const n of novos) if (!ids.has(n.id)) lista = [n, ...lista];
+  if (lista.length !== atual.length || lista.some((p, i) => p.id !== atual[i]?.id)) {
+    savePending(lista);
+  }
 }
 
 export const notificationService = {
@@ -130,6 +192,17 @@ export const notificationService = {
     }
   },
 
+  /** Lembretes vencidos e não resolvidos, do mais novo para o mais antigo. */
+  getPending(): PendingReminder[] {
+    return loadPending();
+  },
+
+  /** Ouve mudanças na lista de pendentes. Devolve a função para parar. */
+  onPendingChange(cb: () => void): () => void {
+    pendingListeners.add(cb);
+    return () => { pendingListeners.delete(cb); };
+  },
+
   /** Dispara uma notificação avulsa (ex.: Pomodoro). */
   notify(title: string, body: string) {
     sendNotification(title, body);
@@ -142,7 +215,11 @@ export const notificationService = {
 
   /** Limpa o histórico de notificações já disparadas (usado ao resetar tarefas). */
   clearFired() {
-    try { localStorage.removeItem(FIRED_KEY); } catch { /* ignore */ }
+    try {
+      localStorage.removeItem(FIRED_KEY);
+      localStorage.removeItem(PENDING_KEY);
+    } catch { /* ignore */ }
     currentTasks = [];
+    pendingListeners.forEach(cb => cb());
   }
 };

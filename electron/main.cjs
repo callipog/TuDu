@@ -9,6 +9,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'tudu-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ]);
 const bridge = require('./bridge.cjs');
+const { createIslandHub } = require('./island.cjs');
 const isDev = process.env.NODE_ENV === 'development';
 
 // Auto-update (só funciona em builds empacotados e publicados no GitHub Releases).
@@ -73,6 +74,17 @@ const MIN_SPLASH_MS = 1100;
 // aconteceu logo depois de uma atualização), o splash cai sozinho.
 const MAX_SPLASH_MS = 12000;
 app.isQuitting = false;
+
+/* Ilha: o hub junta as fontes e resolve a fila de prioridade. As seções ligadas
+   ficam em memória — o hub reavalia a cada segundo enquanto alguém ouve, e ler
+   o settings.json nesse ritmo seria desperdício. */
+let islandSections = null;
+const islandHub = createIslandHub({
+  getSections: () => {
+    if (islandSections === null) islandSections = (readSettings().island || {}).sections || {};
+    return islandSections;
+  },
+});
 
 function createSplash() {
   splash = new BrowserWindow({
@@ -760,6 +772,13 @@ app.whenReady().then(() => {
   // Resposta do renderer a uma operação pedida pela ponte.
   ipcMain.on('bridge:response', (_event, message) => bridge.resolveFromRenderer(message));
 
+  // ---- Ilha ----
+
+  // O renderer manda o retrato das fontes (tarefas, foco, lembretes vencidos)
+  // sempre que ele muda; o hub sanitiza e resolve.
+  ipcMain.on('island:sources', (_event, snapshot) => islandHub.setSources(snapshot));
+  ipcMain.handle('island:state', () => islandHub.current());
+
   startBridgeIfEnabled();
   applyCaptureShortcut();
 
@@ -802,6 +821,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   app.isQuitting = true;
   bridge.stop();
+  islandHub.stop();
 });
 
 app.on('will-quit', () => {
