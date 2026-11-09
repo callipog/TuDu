@@ -68,6 +68,7 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 
 ### Sistema (Configurações)
 - **Tema** claro, escuro, **sépia** ou **sistema** (segue o Windows).
+- **Bordas do board**: seis estilos de brilho na cor de cada etapa (halo, luz interna, degradê, duplo, só no foco ou nenhum) e arredondamento de 12 a 16 px, com amostra ao vivo.
 - **Iniciar com o Windows** e **Iniciar minimizado**.
 - **Fechar para a bandeja** (opcional): o X esconde na bandeja ou fecha o app.
 - **Bandeja do sistema** com menu (Abrir, Verificar atualizações, Sair).
