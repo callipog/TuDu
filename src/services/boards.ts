@@ -64,6 +64,29 @@ export function statusColor(status: string | undefined, completed: boolean, colu
   return FALLBACK_COLORS[(idx >= 0 ? idx : 0) % FALLBACK_COLORS.length];
 }
 
+/* Mesma paleta acima, em "R G B" cru: é o formato que o CSS do board precisa
+   para compor borda e brilho com uma opacidade só — rgb(var(--col) / .38). */
+const STATUS_RGB: Record<string, string> = {
+  backlog: '113 113 122', todo: '59 130 246', in_progress: '245 158 11',
+  review: '168 85 247', done: '16 185 129',
+};
+
+const DONE_RGB = '16 185 129';
+
+/* Na mesma ordem de FALLBACK_COLORS: sky, violet, pink, teal, orange, cyan. */
+const FALLBACK_RGB = [
+  '14 165 233', '139 92 246', '236 72 153', '20 184 166', '249 115 22', '6 182 212',
+];
+
+/** Cor da etapa em "R G B", para o brilho das colunas do board. */
+export function statusRgb(status: string | undefined, completed: boolean, columns: BoardColumn[]): string {
+  const id = status || (completed ? doneColumnId(columns) : columns[0]?.id) || 'todo';
+  if (STATUS_RGB[id]) return STATUS_RGB[id];
+  if (id === doneColumnId(columns)) return DONE_RGB;
+  const idx = columns.findIndex(c => c.id === id);
+  return FALLBACK_RGB[(idx >= 0 ? idx : 0) % FALLBACK_RGB.length];
+}
+
 /** Rótulo legível de um status, resolvendo pelas colunas do projeto. */
 export function statusLabel(status: string | undefined, completed: boolean, columns: BoardColumn[]): string {
   const id = status || (completed ? doneColumnId(columns) : columns[0]?.id);

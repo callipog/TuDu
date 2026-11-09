@@ -109,6 +109,6 @@ Um aplicativo **desktop** (Windows) de gerenciamento de tarefas moderno, com tem
 
 ## 🎨 Design
 
-**Identidade visual:** um ponto e um traço, a tarefa pendente e a tarefa feita — um check reduzido ao essencial. O traço segue a cor do tema e o ponto é sempre violeta (`#7C5CFF`); o nome "tudu" usa a fonte Sora, em minúsculas. O mesmo símbolo aparece no ícone do app, na bandeja, no splash e no menu.
+**Identidade visual:** um ponto e um traço, a tarefa pendente e a tarefa feita — um check reduzido ao essencial. O traço segue a cor do tema e o ponto é sempre violeta (`#7C5CFF`); o nome "TuDu" usa a fonte Sora. O mesmo símbolo aparece no ícone do app, na bandeja, no splash e no menu.
 
 A interface adota uma filosofia "Dark Mode First", utilizando tons de zinco e contrastes coloridos (esmeralda, âmbar, rosa, índigo) para guiar a atenção do usuário aos elementos de prioridade e status das tarefas.

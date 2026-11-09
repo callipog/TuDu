@@ -338,3 +338,100 @@
 .theme-sepia .board-scrollbar::-webkit-scrollbar-track { background: rgba(92, 76, 50, 0.05); }
 .theme-sepia .board-scrollbar::-webkit-scrollbar-thumb { background: rgba(92, 76, 50, 0.24); background-clip: content-box; }
 .theme-sepia .board-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(92, 76, 50, 0.38); background-clip: content-box; }
+
+/* ==========================================================================
+   APARÊNCIA DO BOARD (brilho da borda + arredondamento)
+   Escolhida nas Configurações › Aparência e gravada pelo boardStyleService,
+   que só escreve `data-board-glow` e duas variáveis no <html>.
+
+   Cada coluna recebe a cor da própria etapa em `--col` ("R G B", via
+   statusRgb), então uma regra só serve as cinco etapas e as customizadas.
+   Fora de @layer de propósito: precisa vencer as utilities do Tailwind.
+   ========================================================================== */
+
+:root {
+  --board-surface: #121214;   /* fundo da coluna, usado pela variante degradê */
+  --board-glow-mult: 1;       /* no claro e no sépia o brilho cai pela metade */
+  --board-edge: rgba(255, 255, 255, .1);  /* fim do degradê, igual a border-white/10 */
+  --board-radius: 16px;
+  --board-card-radius: 14px;
+}
+.light { --board-surface: #ffffff; --board-glow-mult: .5; --board-edge: rgba(0, 0, 0, .12); }
+.theme-sepia { --board-surface: #faf6ee; --board-glow-mult: .5; --board-edge: rgba(92, 76, 50, .14); }
+
+.kanban-col {
+  border: 1px solid rgb(var(--col, 255 255 255) / .2);
+  border-radius: var(--board-radius);
+  transition: box-shadow .22s ease, border-color .22s ease, background-color .15s ease;
+}
+
+/* O card dentro da coluna. A classe fica no invólucro que o KanbanBoard
+   desenha; o alvo de verdade é o <div> raiz do TaskItem, filho direto dele.
+   Mirar assim evita que o raio do board vaze para a Lista e a Agenda, que
+   mostram o mesmo TaskItem. */
+.kanban-card,
+.kanban-card > div { border-radius: var(--board-card-radius); }
+.kanban-drop { border-radius: calc(var(--board-card-radius) - 2px); }
+
+/* --- Variantes ---------------------------------------------------------- */
+
+[data-board-glow="halo"] .kanban-col {
+  border-color: rgb(var(--col) / .28);
+  box-shadow: 0 0 26px -9px rgb(var(--col) / calc(.38 * var(--board-glow-mult)));
+}
+
+[data-board-glow="inner"] .kanban-col {
+  border-color: rgb(var(--col) / .3);
+  box-shadow: inset 0 0 30px -12px rgb(var(--col) / calc(.55 * var(--board-glow-mult)));
+}
+
+/* O degradê é borda, não sombra: `--board-glow-mult` (que existe para a
+   sombra colorida não sujar o claro e o sépia) não entra aqui, senão a borda
+   some no fundo branco. O que muda por tema é só o fim do degradê. */
+[data-board-glow="gradient"] .kanban-col {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--board-surface), var(--board-surface)) padding-box,
+    linear-gradient(180deg,
+      rgb(var(--col) / .55) 0%,
+      rgb(var(--col) / .2) 38%,
+      var(--board-edge) 100%) border-box;
+}
+
+[data-board-glow="double"] .kanban-col {
+  border-color: rgb(var(--col) / .3);
+  box-shadow:
+    0 0 24px -10px rgb(var(--col) / calc(.34 * var(--board-glow-mult))),
+    inset 0 0 26px -12px rgb(var(--col) / calc(.42 * var(--board-glow-mult)));
+}
+
+[data-board-glow="focus"] .kanban-col:hover,
+[data-board-glow="focus"] .kanban-col.is-over {
+  border-color: rgb(var(--col) / .38);
+  box-shadow: 0 0 28px -8px rgb(var(--col) / calc(.42 * var(--board-glow-mult)));
+}
+
+/* --- Coluna recebendo um card ------------------------------------------
+   Depois das variantes e com o mesmo peso do seletor delas, para o realce do
+   arraste continuar visível em qualquer brilho escolhido. */
+[data-board-glow] .kanban-col.is-over {
+  background-color: rgba(255, 255, 255, .05);
+  border-color: rgba(255, 255, 255, .4);
+}
+.light [data-board-glow] .kanban-col.is-over { background-color: rgba(0, 0, 0, .04); border-color: rgba(0, 0, 0, .35); }
+.theme-sepia [data-board-glow] .kanban-col.is-over { background-color: rgba(92, 76, 50, .05); border-color: rgba(92, 76, 50, .38); }
+
+/* No degradê o tint branco cobriria a borda inteira (ele é pintado até a
+   borda externa), então o realce é a própria borda acendendo. */
+[data-board-glow="gradient"] .kanban-col.is-over {
+  background:
+    linear-gradient(var(--board-surface), var(--board-surface)) padding-box,
+    linear-gradient(180deg,
+      rgb(var(--col) / .85) 0%,
+      rgb(var(--col) / .4) 60%,
+      rgb(var(--col) / .25) 100%) border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kanban-col { transition: none; }
+}

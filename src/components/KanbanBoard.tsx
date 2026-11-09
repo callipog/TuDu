@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Archive, GripVertical, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Task, Persona, Epic } from '../types';
 import { TaskItem } from './TaskItem';
-import { BoardColumn, DEFAULT_COLUMNS, doneColumnId } from '../services/boards';
+import { BoardColumn, DEFAULT_COLUMNS, doneColumnId, statusRgb } from '../services/boards';
 import { useSortableList } from '../hooks/useSortableList';
 
 interface KanbanBoardProps {
@@ -23,11 +23,6 @@ interface KanbanBoardProps {
   /** Quando informado, as colunas podem ser reordenadas arrastando pelo punho. */
   onReorderColumns?: (columns: BoardColumn[]) => void;
 }
-
-const BORDER: Record<string, string> = {
-  backlog: 'border-zinc-500/20', todo: 'border-blue-500/20', in_progress: 'border-amber-500/20',
-  review: 'border-purple-500/20', done: 'border-emerald-500/20',
-};
 
 export function KanbanBoard({ tasks, onToggleTask, onToggleSubtask, onClickTask, onToggleNotifications, onContextTask, onArchiveCompleted, onDragStart, onReorder, personaById, epicById, columns = DEFAULT_COLUMNS, onReorderColumns }: KanbanBoardProps) {
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
@@ -153,14 +148,16 @@ export function KanbanBoard({ tasks, onToggleTask, onToggleSubtask, onClickTask,
         const colTasks = tasks
           .filter(t => (t.status || (t.completed ? doneId : firstId)) === col.id)
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-        const colColor = BORDER[col.id] || 'border-white/10';
         const colDrop = colSort.itemProps(col.id);
 
         return (
           <div
             key={col.id}
             data-sortable-id={col.id}
-            className={`shrink-0 grow basis-72 flex flex-col bg-[#121214] border ${colColor} rounded-2xl overflow-hidden transition-colors ${dragOverCol === col.id ? 'bg-white/[0.05] border-white/40' : ''} ${colSort.itemClass(col.id)}`}
+            /* --col é a cor da etapa em "R G B": o brilho e o raio da coluna
+               saem daí no index.css, conforme a escolha em Configurações. */
+            style={{ ['--col' as string]: statusRgb(col.id, false, columns) } as React.CSSProperties}
+            className={`kanban-col shrink-0 grow basis-72 flex flex-col bg-[#121214] overflow-hidden ${dragOverCol === col.id ? 'is-over' : ''} ${colSort.itemClass(col.id)}`}
             onDrop={(e) => { if (movingColumn) { colDrop.onDrop(e); return; } handleColumnDrop(e, col.id); }}
             onDragOver={(e) => { if (movingColumn) { colDrop.onDragOver(e); return; } e.preventDefault(); setDragOverCol(col.id); }}
             onDragLeave={() => { if (!movingColumn) setDragOverCol(null); }}
@@ -202,7 +199,7 @@ export function KanbanBoard({ tasks, onToggleTask, onToggleSubtask, onClickTask,
                   onDragStart={(e) => onDragStart(e, task.id)}
                   onDragOver={(e) => { if (movingColumn) return; e.preventDefault(); e.stopPropagation(); setDragOverTask(task.id); setDragOverCol(col.id); }}
                   onDrop={(e) => { if (movingColumn) return; handleCardDrop(e, col.id, task.id); }}
-                  className={`kanban-card-enter cursor-grab active:cursor-grabbing rounded-2xl ${dragOverTask === task.id ? 'ring-2 ring-indigo-500/60' : ''}`}
+                  className={`kanban-card kanban-card-enter cursor-grab active:cursor-grabbing ${dragOverTask === task.id ? 'ring-2 ring-indigo-500/60' : ''}`}
                 >
                   <TaskItem
                     title={task.title}
@@ -228,7 +225,7 @@ export function KanbanBoard({ tasks, onToggleTask, onToggleSubtask, onClickTask,
                 </div>
               ))}
               {colTasks.length === 0 && (
-                <div className="h-20 border-2 border-dashed border-white/10 rounded-xl flex items-center justify-center text-xs text-zinc-500 pointer-events-none">
+                <div className="kanban-drop h-20 border-2 border-dashed border-white/10 flex items-center justify-center text-xs text-zinc-500 pointer-events-none">
                   Arraste tarefas para cá
                 </div>
               )}

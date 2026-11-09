@@ -6,6 +6,7 @@ import { backupService } from '../services/backup';
 import { taskService } from '../services/tasks';
 import { tagService } from '../services/tags';
 import { themeService, Theme } from '../services/theme';
+import { boardStyleService, BoardGlow, BoardRadius, BOARD_GLOWS, BOARD_RADII } from '../services/boardStyle';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Eye, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee, Plug, Zap, Keyboard, CloudUpload, HardDrive, Palette, Info, AlertTriangle } from 'lucide-react';
@@ -63,7 +64,7 @@ interface SettingsModalProps {
 type SectionId = 'aparencia' | 'comportamento' | 'dados' | 'ia' | 'sobre' | 'perigo';
 
 const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode; title: string; hint: string }[] = [
-  { id: 'aparencia', label: 'Aparência', icon: <Palette size={15} />, title: 'Aparência', hint: 'O tema vale para todas as telas do app.' },
+  { id: 'aparencia', label: 'Aparência', icon: <Palette size={15} />, title: 'Aparência', hint: 'Tema, brilho e arredondamento das colunas do board.' },
   { id: 'comportamento', label: 'Comportamento', icon: <Power size={15} />, title: 'Comportamento', hint: 'Como o TuDu abre e como você joga tarefa pra dentro.' },
   { id: 'dados', label: 'Backup & Dados', icon: <HardDrive size={15} />, title: 'Backup & Dados', hint: 'Cópias automáticas, pasta do banco e exportação.' },
   { id: 'ia', label: 'Agentes de IA', icon: <Plug size={15} />, title: 'Agentes de IA (MCP)', hint: 'Porta local para assistentes criarem projetos e tarefas.' },
@@ -74,6 +75,13 @@ const PERIGO: { id: SectionId; label: string; icon: React.ReactNode; title: stri
   id: 'perigo', label: 'Zona de perigo', icon: <AlertTriangle size={15} />,
   title: 'Zona de perigo', hint: 'Ações irreversíveis. Exporte um backup antes, se precisar.',
 };
+
+/* Três etapas de exemplo para a amostra das bordas do board. */
+const BOARD_PREVIEW = [
+  { label: 'A Fazer', rgb: '59 130 246' },
+  { label: 'Em Andamento', rgb: '245 158 11' },
+  { label: 'Finalizado', rgb: '16 185 129' },
+];
 
 function CheckRow({ checked, onChange, disabled, icon, label, hint }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; icon: React.ReactNode; label: string; hint?: string }) {
   return (
@@ -103,6 +111,8 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
   const [updateReady, setUpdateReady] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(themeService.get());
+  const [glow, setGlow] = useState<BoardGlow>(boardStyleService.getGlow());
+  const [radius, setRadius] = useState<BoardRadius>(boardStyleService.getRadius());
   const [bridge, setBridge] = useState<BridgeStatus | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
@@ -189,6 +199,8 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
       setShowToken(false);
       setGravandoAtalho(false);
       setTheme(themeService.get());
+      setGlow(boardStyleService.getGlow());
+      setRadius(boardStyleService.getRadius());
     }
   }, [isOpen]);
 
@@ -346,25 +358,88 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
 
           {/* ---------------------------------------------------- Aparência */}
           {section === 'aparencia' && (
-            <div className="grid grid-cols-2 gap-3">
-              {([
-                { id: 'dark' as Theme, label: 'Escuro', icon: <Moon size={15} /> },
-                { id: 'light' as Theme, label: 'Claro', icon: <Sun size={15} /> },
-                { id: 'sepia' as Theme, label: 'Sépia', icon: <Coffee size={15} /> },
-                { id: 'system' as Theme, label: 'Sistema', icon: <Monitor size={15} /> },
-              ]).map(opt => (
-                <button
-                  key={opt.id}
-                  onClick={() => { themeService.set(opt.id); setTheme(opt.id); }}
-                  className={`flex items-center justify-center gap-2 text-sm font-medium rounded-lg py-2.5 border transition-colors ${
-                    theme === opt.id
-                      ? 'bg-indigo-600 border-indigo-600 text-white'
-                      : 'text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 border-white/10'
-                  }`}
-                >
-                  {opt.icon} {opt.label}
-                </button>
-              ))}
+            <div className="space-y-5">
+              <div>
+                <p className={sectionTitle}>Tema</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {([
+                    { id: 'dark' as Theme, label: 'Escuro', icon: <Moon size={15} /> },
+                    { id: 'light' as Theme, label: 'Claro', icon: <Sun size={15} /> },
+                    { id: 'sepia' as Theme, label: 'Sépia', icon: <Coffee size={15} /> },
+                    { id: 'system' as Theme, label: 'Sistema', icon: <Monitor size={15} /> },
+                  ]).map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => { themeService.set(opt.id); setTheme(opt.id); }}
+                      className={`flex items-center justify-center gap-2 text-sm font-medium rounded-lg py-2.5 border transition-colors ${
+                        theme === opt.id
+                          ? 'bg-indigo-600 border-indigo-600 text-white'
+                          : 'text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 border-white/10'
+                      }`}
+                    >
+                      {opt.icon} {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className={sectionTitle}>Bordas do board</p>
+                {/* As colunas abaixo usam a mesma classe `kanban-col` do board,
+                    então a amostra muda junto com a escolha — não é um desenho
+                    separado que pode ficar desatualizado. */}
+                <div className="flex gap-2.5 mb-3 px-0.5 py-1">
+                  {BOARD_PREVIEW.map(prev => (
+                    <div
+                      key={prev.label}
+                      style={{ ['--col' as string]: prev.rgb } as React.CSSProperties}
+                      className="kanban-col flex-1 min-w-0 bg-[#121214] overflow-hidden"
+                    >
+                      <div className="px-2.5 py-1.5 border-b border-white/5 text-[10px] font-semibold text-white truncate">{prev.label}</div>
+                      <div className="p-2.5 space-y-1.5">
+                        <div className="kanban-card h-6 bg-white/[0.04] border border-white/10" />
+                        <div className="kanban-card h-6 w-3/4 bg-white/[0.04] border border-white/10" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {BOARD_GLOWS.map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => { boardStyleService.setGlow(opt.id); setGlow(opt.id); }}
+                      className={`text-left rounded-lg px-3 py-2 border transition-colors ${
+                        glow === opt.id
+                          ? 'bg-indigo-500/15 border-indigo-500/50'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10'
+                      }`}
+                    >
+                      <span className={`block text-sm font-medium ${glow === opt.id ? 'text-indigo-300' : 'text-white'}`}>{opt.label}</span>
+                      <span className="block text-[11px] text-zinc-500 leading-snug">{opt.hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className={sectionTitle}>Arredondamento</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {BOARD_RADII.map(r => (
+                    <button
+                      key={r}
+                      onClick={() => { boardStyleService.setRadius(r); setRadius(r); }}
+                      className={`text-sm font-medium rounded-lg py-2 border transition-colors ${
+                        radius === r
+                          ? 'bg-indigo-600 border-indigo-600 text-white'
+                          : 'text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 border-white/10'
+                      }`}
+                    >
+                      {r}px{r === 16 && <span className="block text-[10px] font-normal opacity-70">padrão</span>}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-2">Vale para as colunas e para os cards dentro delas, que ficam 2px mais fechados.</p>
+              </div>
             </div>
           )}
 
