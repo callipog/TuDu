@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, Archive, BarChart3, Bell, BellOff, Calendar, CalendarClock, Check, ChevronDown, Clock, Diamond, FolderKanban, GripVertical, HelpCircle, Inbox, Keyboard, Layout, List, Plus, Search, Settings, Sidebar as SidebarIcon, Timer, Trash2, Users, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Task, Urgency, Recurrence, RecurrenceEnd, SubTask, TaskStatus, Attachment, Template } from './types';
+import type { IslandAction } from './tudu-api';
 import { taskService } from './services/tasks';
 import { notificationService, DEFAULT_REMINDER_MINUTES } from './services/notifications';
 import { parseQuickAdd } from './services/quickAdd';
@@ -224,6 +225,35 @@ export default function App() {
 
   // Ilha: publica tarefas, foco e lembretes vencidos para o processo principal.
   useIslandSources(tasks, pomo);
+
+  // Botões da ilha que mexem em tarefas e no foco. O ref guarda a versão atual
+  // dos handlers, que fecham sobre `tasks` e mudam a cada render.
+  const islandActionRef = useRef<(a: IslandAction) => void>(() => {});
+  islandActionRef.current = (a: IslandAction) => {
+    const task = a.taskId ? tasks.find(t => t.id === a.taskId) : undefined;
+    switch (a.type) {
+      case 'task-complete':
+        if (task && !task.completed) handleToggleTask(task);
+        break;
+      case 'task-snooze':
+        if (a.id) notificationService.snooze(a.id, 10);
+        break;
+      case 'task-open':
+        if (task) handleViewTask(task);
+        break;
+      case 'focus':
+        if (a.op === 'start') { if (!pomo.running) pomo.start(); }
+        else if (a.op === 'toggle') pomo.toggle();
+        else if (a.op === 'skip') pomo.skip();
+        else if (a.op === 'finish') pomo.finish();
+        break;
+    }
+  };
+  useEffect(() => {
+    const island = typeof window !== 'undefined' ? window.tudu?.island : undefined;
+    if (!island) return;
+    return island.onAction(a => islandActionRef.current(a));
+  }, []);
 
   // Atalhos de teclado (inativos ao digitar ou com modal aberto).
   useEffect(() => {

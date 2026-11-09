@@ -197,6 +197,18 @@ export const notificationService = {
     return loadPending();
   },
 
+  /**
+   * Adia um lembrete pendente pela ilha. Não mexe no prazo da tarefa: o
+   * lembrete só some por `minutes` e volta como se tivesse acabado de vencer.
+   */
+  snooze(id: string, minutes = 10) {
+    const lista = loadPending();
+    const alvo = lista.find(p => p.id === id);
+    if (!alvo) return;
+    alvo.snoozedUntil = Date.now() + minutes * 60_000;
+    savePending(lista);
+  },
+
   /** Ouve mudanças na lista de pendentes. Devolve a função para parar. */
   onPendingChange(cb: () => void): () => void {
     pendingListeners.add(cb);

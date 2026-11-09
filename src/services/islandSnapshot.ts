@@ -14,6 +14,8 @@ export interface PendingReminder {
   title: string;
   urgency: Urgency;
   firedAt: number;
+  /** Adiado pela ilha: some até este instante e volta como recém-vencido. */
+  snoozedUntil?: number;
 }
 
 export interface IslandSnapshot {
@@ -26,6 +28,12 @@ export interface IslandSnapshot {
     mode: 'work' | 'break';
     /** Fim do bloco, para a ilha contar sozinha sem receber um tick por segundo. */
     endsAt: number | null;
+    /** Quanto sobra do bloco (vale quando pausado). */
+    leftMs: number;
+    /** Tamanho do bloco atual, para o anel de progresso. */
+    totalMs: number;
+    /** Cronômetro livre rodando: de quando conta. */
+    startedAt: number | null;
     taskTitle: string;
     cycles: number;
   } | null;
@@ -40,6 +48,9 @@ export interface FocusInput {
   kind: 'pomodoro' | 'stopwatch';
   mode: 'work' | 'break';
   leftSeconds: number;
+  elapsedSeconds: number;
+  workMinutes: number;
+  breakMinutes: number;
   focusId: string;
   cycles: number;
 }
@@ -74,11 +85,13 @@ export function buildIslandSnapshot(input: {
 
   // Título e urgência vêm da tarefa, não do momento do disparo: se a pessoa
   // renomeou ou subiu a urgência depois, a ilha mostra o que vale agora.
+  // Adiado volta quando o prazo do adiamento passa, como se tivesse acabado de vencer.
   const reminders = input.pending
     .filter(p => stillPending(p, byId.get(p.taskId)))
+    .filter(p => !p.snoozedUntil || p.snoozedUntil <= now)
     .map(p => {
       const t = byId.get(p.taskId)!;
-      return { id: p.id, taskId: t.id, title: t.title, urgency: t.urgency, firedAt: p.firedAt };
+      return { id: p.id, taskId: t.id, title: t.title, urgency: t.urgency, firedAt: p.snoozedUntil || p.firedAt };
     });
 
   let next: IslandSnapshot['next'] = null;
@@ -105,6 +118,9 @@ export function buildIslandSnapshot(input: {
       kind: f.kind,
       mode: f.mode,
       endsAt: f.running && f.kind === 'pomodoro' ? now + Math.max(0, f.leftSeconds) * 1000 : null,
+      leftMs: f.kind === 'pomodoro' ? Math.max(0, f.leftSeconds) * 1000 : 0,
+      totalMs: f.kind === 'pomodoro' ? (f.mode === 'work' ? f.workMinutes : f.breakMinutes) * 60_000 : 0,
+      startedAt: f.running && f.kind === 'stopwatch' ? now - Math.max(0, f.elapsedSeconds) * 1000 : null,
       taskTitle: task ? task.title : '',
       cycles: f.cycles,
     };

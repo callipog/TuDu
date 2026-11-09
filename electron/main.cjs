@@ -10,6 +10,8 @@ protocol.registerSchemesAsPrivileged([
 ]);
 const bridge = require('./bridge.cjs');
 const { createIslandHub } = require('./island.cjs');
+const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, WINDOW_W, WINDOW_H } = require('./island-config.cjs');
+const { createMediaBridge, forQueue, forIsland } = require('./media.cjs');
 const isDev = process.env.NODE_ENV === 'development';
 
 // Auto-update (só funciona em builds empacotados e publicados no GitHub Releases).
@@ -81,8 +83,30 @@ app.isQuitting = false;
 let islandSections = null;
 const islandHub = createIslandHub({
   getSections: () => {
-    if (islandSections === null) islandSections = (readSettings().island || {}).sections || {};
+    if (islandSections === null) islandSections = islandConfig().sections;
     return islandSections;
+  },
+});
+
+function islandConfig() {
+  return normalizeIslandConfig(readSettings().island);
+}
+
+let islandWindow = null;
+let islandUnsub = null;
+let islandState = null;
+let islandOnTop = false;
+let islandCapturePending = false;
+/* Notebook ou PC de mesa: decide se o cabeçalho mostra a bateria. Descoberto
+   uma vez, na primeira abertura da ilha. */
+let hasBattery = null;
+
+// Player: o controle de mídia do Windows alimenta a fila (sem a capa) e a janela
+// da ilha (com a capa).
+const media = createMediaBridge({
+  onChange: (p) => {
+    islandHub.setPlayer(forQueue(p));
+    sendIsland('island:player', forIsland(p));
   },
 });
 
@@ -183,6 +207,13 @@ function createWindow(startHidden) {
     if (!app.isQuitting && closeToTray) {
       event.preventDefault();
       mainWindow.hide();
+      return;
+    }
+    // Encerra de vez. Explícito porque a ilha é uma janela que fica aberta, e
+    // sem isto o 'window-all-closed' nunca chegaria.
+    if (!app.isQuitting) {
+      app.isQuitting = true;
+      setImmediate(() => app.quit());
     }
   });
 
@@ -376,6 +407,164 @@ function applyCaptureShortcut() {
   }
   if (registered) captureShortcut = accelerator;
   return { enabled: true, accelerator, registered };
+}
+
+/* ---- Ilha -----------------------------------------------------------------
+   Uma janela própria, transparente e sem moldura, do tamanho do painel aberto.
+   Não é alwaysOnTop: fica atrás das outras janelas, então só aparece na área de
+   trabalho. Fura as janelas quando fixada pelo alfinete ou quando há lembrete
+   crítico pendente. Na parte transparente o clique atravessa: a janela só
+   captura o mouse quando ele está sobre a pílula (`island:hit`). */
+
+function sendIsland(channel, data) {
+  if (islandWindow && !islandWindow.isDestroyed()) islandWindow.webContents.send(channel, data);
+}
+
+function publicIslandConfig() {
+  return { ...islandConfig(), hasBattery: hasBattery === true };
+}
+
+function placeIsland() {
+  if (!islandWindow || islandWindow.isDestroyed()) return;
+  const { workArea } = require('electron').screen.getPrimaryDisplay();
+  islandWindow.setBounds(islandBounds(islandConfig().position, workArea, { width: WINDOW_W, height: WINDOW_H }));
+}
+
+function applyIslandZ(force) {
+  if (!islandWindow || islandWindow.isDestroyed()) return;
+  const top = shouldBeOnTop(islandConfig(), islandState);
+  if (top === islandOnTop && !force) return;
+  islandOnTop = top;
+  islandWindow.setAlwaysOnTop(top, 'floating');
+  // Subir sem roubar o foco de quem está digitando em outro app.
+  if (top) islandWindow.showInactive();
+}
+
+function detectBattery() {
+  if (hasBattery !== null || process.platform !== 'win32') return;
+  hasBattery = false;
+  require('child_process').execFile('powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', '[bool](Get-CimInstance Win32_Battery)'],
+    { windowsHide: true, timeout: 15000 },
+    (err, stdout) => {
+      hasBattery = !err && /true/i.test(String(stdout));
+      sendIsland('island:config', publicIslandConfig());
+    });
+}
+
+function createIslandWindow() {
+  islandWindow = new BrowserWindow({
+    width: WINDOW_W,
+    height: WINDOW_H,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    show: false,
+    title: 'TuDu · Ilha',
+    webPreferences: {
+      preload: path.join(__dirname, 'island-preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      devTools: isDev
+    }
+  });
+  islandOnTop = false;
+  islandWindow.setIgnoreMouseEvents(true, { forward: true });
+  islandWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  islandWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  islandWindow.loadFile(path.join(__dirname, 'island.html'));
+  placeIsland();
+  islandWindow.once('ready-to-show', () => {
+    if (!islandWindow || islandWindow.isDestroyed()) return;
+    islandWindow.showInactive();
+    applyIslandZ(true);
+  });
+  islandWindow.on('closed', () => {
+    islandWindow = null;
+    if (islandUnsub) { islandUnsub(); islandUnsub = null; }
+  });
+  islandUnsub = islandHub.subscribe((state) => {
+    islandState = state;
+    sendIsland('island:state', state);
+    applyIslandZ();
+  });
+  detectBattery();
+}
+
+/** Liga, desliga ou ajusta a ilha conforme a configuração salva. */
+function syncIsland() {
+  const cfg = islandConfig();
+  islandSections = null;
+  islandHub.refresh();
+  if (!cfg.enabled) {
+    media.stop();
+    if (islandWindow && !islandWindow.isDestroyed()) islandWindow.close();
+    return;
+  }
+  if (cfg.sections.player) media.start();
+  else media.stop();
+  if (!islandWindow || islandWindow.isDestroyed()) {
+    createIslandWindow();
+  } else {
+    placeIsland();
+    applyIslandZ(true);
+    sendIsland('island:config', publicIslandConfig());
+  }
+}
+
+/** Repassa à janela principal o que só ela sabe fazer (mexer em tarefas e no foco). */
+function forwardToMain(action) {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow(true);
+  mainWindow.webContents.send('island:action', action);
+}
+
+function handleIslandAction(raw) {
+  if (!raw || typeof raw !== 'object') return;
+  const a = {
+    type: String(raw.type || ''),
+    op: String(raw.op || '').slice(0, 20),
+    taskId: String(raw.taskId || '').slice(0, 100),
+    id: String(raw.id || '').slice(0, 200),
+  };
+  switch (a.type) {
+    case 'open-app':
+      showWindow();
+      break;
+    case 'media':
+      media.command(a.op);
+      break;
+    case 'pin': {
+      writeSettings({ island: mergeIslandConfig(readSettings().island, { pinned: raw.value === true }) });
+      applyIslandZ(true);
+      sendIsland('island:config', publicIslandConfig());
+      break;
+    }
+    case 'capture': {
+      const text = String(raw.text ?? '').slice(0, 500).trim();
+      if (!text) return;
+      if (!mainWindow || mainWindow.isDestroyed()) createWindow(true);
+      islandCapturePending = true;
+      mainWindow.webContents.send('capture:text', text);
+      break;
+    }
+    case 'task-open':
+      showWindow();
+      forwardToMain(a);
+      break;
+    case 'task-complete':
+    case 'task-snooze':
+    case 'focus':
+      forwardToMain(a);
+      break;
+  }
 }
 
 function showWindow() {
@@ -720,6 +909,10 @@ app.whenReady().then(() => {
 
   // O renderer confirma que gravou; a janelinha mostra e some.
   ipcMain.on('capture:saved', (_event, title) => {
+    if (islandCapturePending) {
+      islandCapturePending = false;
+      sendIsland('island:saved', String(title ?? '').slice(0, 120));
+    }
     if (captureWindow && !captureWindow.isDestroyed() && captureWindow.isVisible()) {
       captureWindow.webContents.send('capture:saved', String(title ?? '').slice(0, 120));
       setTimeout(hideCapture, 900);
@@ -776,11 +969,46 @@ app.whenReady().then(() => {
 
   // O renderer manda o retrato das fontes (tarefas, foco, lembretes vencidos)
   // sempre que ele muda; o hub sanitiza e resolve.
-  ipcMain.on('island:sources', (_event, snapshot) => islandHub.setSources(snapshot));
+  ipcMain.on('island:sources', (event, snapshot) => {
+    if (mainWindow && event.sender === mainWindow.webContents) islandHub.setSources(snapshot);
+  });
   ipcMain.handle('island:state', () => islandHub.current());
+
+  // Janela da ilha: estado inicial, mouse sobre a pílula e os botões dela.
+  const fromIsland = (event) => islandWindow && !islandWindow.isDestroyed() && event.sender === islandWindow.webContents;
+  ipcMain.handle('island:init', (event) => {
+    if (!fromIsland(event)) return null;
+    return { state: islandHub.current(), config: publicIslandConfig(), player: forIsland(media.current()) };
+  });
+  ipcMain.on('island:hit', (event, over) => {
+    if (fromIsland(event)) islandWindow.setIgnoreMouseEvents(!over, { forward: true });
+  });
+  ipcMain.on('island:action', (event, action) => {
+    if (fromIsland(event)) handleIslandAction(action);
+  });
+
+  // Configurações (tela do app).
+  ipcMain.handle('island:get-config', () => publicIslandConfig());
+  ipcMain.handle('island:set-config', (_event, patch) => {
+    writeSettings({ island: mergeIslandConfig(readSettings().island, patch) });
+    syncIsland();
+    return publicIslandConfig();
+  });
+
+  // Um bloco de foco terminou: pausa a música, se a pessoa quiser assim.
+  ipcMain.on('island:cycle-ended', () => {
+    const p = media.current();
+    if (islandConfig().pauseAtCycleEnd && p && p.active && p.playing) media.command('pause');
+  });
 
   startBridgeIfEnabled();
   applyCaptureShortcut();
+
+  syncIsland();
+  const { screen: tela } = require('electron');
+  tela.on('display-metrics-changed', placeIsland);
+  tela.on('display-added', placeIsland);
+  tela.on('display-removed', placeIsland);
 
   ipcMain.handle('update:install', () => {
     if (autoUpdater) {
@@ -822,6 +1050,7 @@ app.on('before-quit', () => {
   app.isQuitting = true;
   bridge.stop();
   islandHub.stop();
+  media.stop();
 });
 
 app.on('will-quit', () => {

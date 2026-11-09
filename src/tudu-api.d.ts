@@ -13,6 +13,27 @@ interface BackupState {
   clouds: { id: string; label: string; dir: string }[];
 }
 
+/** Configuração da ilha (settings.json → island). */
+export interface IslandConfig {
+  enabled: boolean;
+  position: 'tl' | 'tc' | 'tr' | 'cl' | 'cr' | 'bl' | 'bc' | 'br';
+  pinned: boolean;
+  hoverOpen: boolean;
+  raiseCritical: boolean;
+  pauseAtCycleEnd: boolean;
+  sections: { player: boolean; foco: boolean; lembretes: boolean; captura: boolean };
+  /** Notebook (mostra a bateria) ou PC de mesa. Só leitura. */
+  hasBattery: boolean;
+}
+
+/** Pedido de um botão da ilha para a janela principal. */
+export interface IslandAction {
+  type: 'task-complete' | 'task-snooze' | 'task-open' | 'focus';
+  op: string;
+  taskId: string;
+  id: string;
+}
+
 /** Estado do atalho global de captura rápida. */
 interface CaptureConfig {
   enabled: boolean;
@@ -86,6 +107,10 @@ declare global {
         publish: (snapshot: IslandSnapshot) => void;
         /** Estado resolvido pela fila de prioridade (electron/island-queue.cjs). */
         state: () => Promise<unknown>;
+        getConfig: () => Promise<IslandConfig>;
+        setConfig: (patch: Partial<Omit<IslandConfig, 'sections' | 'hasBattery'>> & { sections?: Partial<IslandConfig['sections']> }) => Promise<IslandConfig>;
+        cycleEnded: () => void;
+        onAction: (cb: (action: IslandAction) => void) => () => void;
       };
       updates: {
         install: () => Promise<void>;

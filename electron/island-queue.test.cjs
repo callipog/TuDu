@@ -298,3 +298,26 @@ test('hub: seções vêm das configurações a cada cálculo', () => {
   sections = { lembretes: false };
   assert.equal(hub.current().line.kind, 'repouso');
 });
+
+// ------------------------------------------------ dados das seções abertas
+
+test('as seções recebem próxima, foco e dia mesmo fora da linha', () => {
+  const s = resolve({
+    sources: {
+      next: { id: 'a', title: 'Longe', dueAt: NOW + 3 * 60 * MIN },
+      focus: { ...runningFocus, running: false, leftMs: 5 * MIN, totalMs: 25 * MIN },
+      day: { done: 1, total: 4 },
+    },
+    now: NOW,
+  });
+  assert.equal(s.line.kind, 'repouso');
+  assert.equal(s.next.title, 'Longe');
+  assert.equal(s.focus.leftMs, 5 * MIN);
+  assert.equal(s.focus.totalMs, 25 * MIN);
+  assert.deepEqual(s.day, { done: 1, total: 4 });
+});
+
+test('foco desligado também some do painel', () => {
+  const s = resolve({ sources: { focus: runningFocus }, sections: { foco: false }, now: NOW });
+  assert.equal(s.focus, null);
+});

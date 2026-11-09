@@ -7,9 +7,10 @@ import { taskService } from '../services/tasks';
 import { tagService } from '../services/tags';
 import { themeService, Theme } from '../services/theme';
 import { boardStyleService, BoardGlow, BoardRadius, BOARD_GLOWS, BOARD_RADII } from '../services/boardStyle';
+import type { IslandConfig } from '../tudu-api';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Eye, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee, Plug, Zap, Keyboard, CloudUpload, HardDrive, Palette, Info, AlertTriangle } from 'lucide-react';
+import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Eye, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee, Plug, Zap, Keyboard, CloudUpload, HardDrive, Palette, Info, AlertTriangle, PanelTop, Pin, MousePointerClick, Music, Timer, BellRing, ListPlus, CalendarCheck } from 'lucide-react';
 
 type BridgeStatus = Awaited<ReturnType<NonNullable<Window['tudu']>['bridge']['status']>>;
 type CaptureConfig = Awaited<ReturnType<NonNullable<Window['tudu']>['capture']['get']>>;
@@ -61,10 +62,11 @@ interface SettingsModalProps {
  * o que era "Backup automático" + "Dados & Backup" virou um assunto só, e
  * "Sobre" + "Suporte" também. A zona de perigo fica ancorada no rodapé.
  */
-type SectionId = 'aparencia' | 'comportamento' | 'dados' | 'ia' | 'sobre' | 'perigo';
+type SectionId = 'aparencia' | 'ilha' | 'comportamento' | 'dados' | 'ia' | 'sobre' | 'perigo';
 
 const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode; title: string; hint: string }[] = [
   { id: 'aparencia', label: 'Aparência', icon: <Palette size={15} />, title: 'Aparência', hint: 'Tema, brilho e arredondamento das colunas do board.' },
+  { id: 'ilha', label: 'Ilha', icon: <PanelTop size={15} />, title: 'Ilha', hint: 'A pílula do TuDu na área de trabalho: o que ela mostra e onde fica.' },
   { id: 'comportamento', label: 'Comportamento', icon: <Power size={15} />, title: 'Comportamento', hint: 'Como o TuDu abre e como você joga tarefa pra dentro.' },
   { id: 'dados', label: 'Backup & Dados', icon: <HardDrive size={15} />, title: 'Backup & Dados', hint: 'Cópias automáticas, pasta do banco e exportação.' },
   { id: 'ia', label: 'Agentes de IA', icon: <Plug size={15} />, title: 'Agentes de IA (MCP)', hint: 'Porta local para assistentes criarem projetos e tarefas.' },
@@ -75,6 +77,20 @@ const PERIGO: { id: SectionId; label: string; icon: React.ReactNode; title: stri
   id: 'perigo', label: 'Zona de perigo', icon: <AlertTriangle size={15} />,
   title: 'Zona de perigo', hint: 'Ações irreversíveis. Exporte um backup antes, se precisar.',
 };
+
+/* As oito posições da ilha, na ordem da grade 3 × 3 (o centro fica vazio).
+   Classes literais: o Tailwind não enxerga classe montada em runtime. */
+const ISLAND_POSITIONS: { id: IslandConfig['position'] | null; label: string; mark: string }[] = [
+  { id: 'tl', label: 'Superior esquerdo', mark: 'top-[16%] left-[10%]' },
+  { id: 'tc', label: 'Superior central', mark: 'top-[16%] left-[29%]' },
+  { id: 'tr', label: 'Superior direito', mark: 'top-[16%] right-[10%]' },
+  { id: 'cl', label: 'Central esquerdo', mark: 'top-[42%] left-[10%]' },
+  { id: null, label: '', mark: '' },
+  { id: 'cr', label: 'Central direito', mark: 'top-[42%] right-[10%]' },
+  { id: 'bl', label: 'Inferior esquerdo', mark: 'bottom-[16%] left-[10%]' },
+  { id: 'bc', label: 'Inferior central', mark: 'bottom-[16%] left-[29%]' },
+  { id: 'br', label: 'Inferior direito', mark: 'bottom-[16%] right-[10%]' },
+];
 
 /* Três etapas de exemplo para a amostra das bordas do board. */
 const BOARD_PREVIEW = [
@@ -113,6 +129,7 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
   const [theme, setTheme] = useState<Theme>(themeService.get());
   const [glow, setGlow] = useState<BoardGlow>(boardStyleService.getGlow());
   const [radius, setRadius] = useState<BoardRadius>(boardStyleService.getRadius());
+  const [island, setIsland] = useState<IslandConfig | null>(null);
   const [bridge, setBridge] = useState<BridgeStatus | null>(null);
   const [showToken, setShowToken] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
@@ -192,6 +209,7 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
       window.tudu?.bridge.status().then(setBridge).catch(() => setBridge(null));
       window.tudu?.capture.get().then(setCapture).catch(() => setCapture(null));
       window.tudu?.backup.state().then(setBackup).catch(() => setBackup(null));
+      window.tudu?.island?.getConfig().then(setIsland).catch(() => setIsland(null));
       setSection('aparencia');
       setRestaurar(null);
       setBackupMsg(null);
@@ -305,6 +323,13 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
   }, [gravandoAtalho]);
 
   const sectionTitle = 'text-[10px] uppercase font-bold text-zinc-500 tracking-wider mb-2';
+
+  /* Ilha: aplica na tela na hora e confirma com o que o processo principal gravou. */
+  async function updateIsland(patch: Parameters<NonNullable<Window['tudu']>['island']['setConfig']>[0]) {
+    setIsland(prev => prev ? { ...prev, ...patch, sections: { ...prev.sections, ...(patch.sections ?? {}) } } as IslandConfig : prev);
+    const saved = await window.tudu?.island?.setConfig(patch).catch(() => null);
+    if (saved) setIsland(saved);
+  }
   const atual = section === 'perigo' ? PERIGO : SECTIONS.find(s => s.id === section)!;
 
   const navItem = (item: typeof PERIGO, perigoso = false) => {
@@ -439,6 +464,77 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
                   ))}
                 </div>
                 <p className="text-[11px] text-zinc-500 mt-2">Vale para as colunas e para os cards dentro delas, que ficam 2px mais fechados.</p>
+              </div>
+            </div>
+          )}
+
+          {/* --------------------------------------------------------- Ilha */}
+          {section === 'ilha' && (
+            <div className="space-y-5">
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4">
+                <CheckRow
+                  checked={!!island?.enabled}
+                  onChange={(v) => updateIsland({ enabled: v })}
+                  disabled={!isElectron || !island}
+                  icon={<PanelTop size={15} />}
+                  label="Mostrar a ilha na área de trabalho"
+                  hint="Fica atrás das outras janelas: aparece quando a área de trabalho está à vista."
+                />
+              </div>
+
+              <div className={`space-y-5 transition-opacity ${island?.enabled ? '' : 'opacity-40 pointer-events-none'}`}>
+                <div>
+                  <p className={sectionTitle}>Posição</p>
+                  <div className="flex items-start gap-4">
+                    <div className="grid grid-cols-3 gap-1.5 w-[168px] shrink-0">
+                      {ISLAND_POSITIONS.map((pos, i) => pos.id === null ? (
+                        <span key={i} className="aspect-[16/10] rounded-md border border-dashed border-white/5" aria-hidden="true" />
+                      ) : (
+                        <button
+                          key={pos.id}
+                          type="button"
+                          title={pos.label}
+                          aria-label={pos.label}
+                          aria-pressed={island?.position === pos.id}
+                          onClick={() => updateIsland({ position: pos.id! })}
+                          className={`relative aspect-[16/10] rounded-md border transition-colors ${
+                            island?.position === pos.id
+                              ? 'bg-indigo-500/15 border-indigo-500/50'
+                              : 'bg-white/5 hover:bg-white/10 border-white/10'
+                          }`}
+                        >
+                          <span className={`absolute w-[42%] h-[15%] rounded-full ${pos.mark} ${island?.position === pos.id ? 'bg-indigo-400' : 'bg-white/30'}`} />
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-zinc-500 pt-1">
+                      Agora em <span className="text-zinc-300 font-medium">{ISLAND_POSITIONS.find(p => p.id === island?.position)?.label ?? '—'}</span>.
+                      A ilha cresce sempre para longe da borda em que mora.
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className={sectionTitle}>Seções</p>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 divide-y divide-white/5">
+                    <CheckRow checked disabled onChange={() => {}} icon={<CalendarCheck size={15} />} label="Hoje" hint="A próxima tarefa e o progresso do dia. Sempre ligada: é a seção de base." />
+                    <CheckRow checked={!!island?.sections.player} onChange={(v) => updateIsland({ sections: { player: v } })} icon={<Music size={15} />} label="Player" hint="O que estiver tocando no Spotify, YouTube ou outro player do Windows." />
+                    <CheckRow checked={!!island?.sections.foco} onChange={(v) => updateIsland({ sections: { foco: v } })} icon={<Timer size={15} />} label="Timer de foco" hint="O ciclo do Pomodoro rodando fora do app." />
+                    <CheckRow checked={!!island?.sections.lembretes} onChange={(v) => updateIsland({ sections: { lembretes: v } })} icon={<BellRing size={15} />} label="Lembretes" hint="Prazos vencidos com os botões de concluir e adiar." />
+                    <CheckRow checked={!!island?.sections.captura} onChange={(v) => updateIsland({ sections: { captura: v } })} icon={<ListPlus size={15} />} label="Nova tarefa" hint="O campo de captura rápida dentro da ilha." />
+                  </div>
+                  <p className="text-[11px] text-zinc-500 mt-2">Cada seção ligada vira um ponto embaixo da ilha. Desligar também a tira da fila: ela nunca toma a linha fechada.</p>
+                </div>
+
+                <div>
+                  <p className={sectionTitle}>Comportamento</p>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 divide-y divide-white/5">
+                    <CheckRow checked={!!island?.hoverOpen} onChange={(v) => updateIsland({ hoverOpen: v })} icon={<MousePointerClick size={15} />} label="Abrir ao passar o mouse" hint="Desligado, a ilha só abre com um clique." />
+                    <CheckRow checked={!!island?.raiseCritical} onChange={(v) => updateIsland({ raiseCritical: v })} icon={<AlertTriangle size={15} />} label="Lembrete crítico sobe por cima das janelas" hint="Os outros esperam você voltar à área de trabalho." />
+                    <CheckRow checked={!!island?.pinned} onChange={(v) => updateIsland({ pinned: v })} icon={<Pin size={15} />} label="Fixar por cima das janelas" hint="A ilha fica sempre à vista. O mesmo que o alfinete dela." />
+                    <CheckRow checked={!!island?.pauseAtCycleEnd} onChange={(v) => updateIsland({ pauseAtCycleEnd: v })} disabled={!island?.sections.player} icon={<Music size={15} />} label="Pausar a música no fim do ciclo de foco" hint="Quando um bloco do Pomodoro fecha, a faixa para sozinha." />
+                  </div>
+                </div>
               </div>
             </div>
           )}

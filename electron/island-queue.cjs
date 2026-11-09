@@ -97,6 +97,11 @@ function sanitizeSources(raw) {
       kind: src.focus.kind === 'stopwatch' ? 'stopwatch' : 'pomodoro',
       mode: src.focus.mode === 'break' ? 'break' : 'work',
       endsAt: finite(src.focus.endsAt),
+      /* pausado: quanto sobra; o tamanho do bloco serve ao anel de progresso */
+      leftMs: Math.max(0, finite(src.focus.leftMs) || 0),
+      totalMs: Math.max(0, finite(src.focus.totalMs) || 0),
+      /* cronômetro livre: conta para cima a partir daqui */
+      startedAt: finite(src.focus.startedAt),
       taskTitle: text(src.focus.taskTitle),
       cycles: Math.max(0, Math.floor(finite(src.focus.cycles) || 0)),
     };
@@ -203,6 +208,11 @@ function resolve(input) {
     /* o pulso do player aconteceu, mas o foco segurou a linha */
     muted: pulse && focusRunning,
     reminders,
+    /* As seções do painel aberto mostram isto mesmo quando não está na linha:
+       a próxima tarefa ainda longe, o foco pausado, o progresso do dia. */
+    next: src.next,
+    focus: on.foco ? src.focus : null,
+    day: src.day,
   };
 }
 

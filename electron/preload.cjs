@@ -75,6 +75,15 @@ contextBridge.exposeInMainWorld('tudu', {
   island: {
     publish: (snapshot) => ipcRenderer.send('island:sources', snapshot),
     state: () => ipcRenderer.invoke('island:state'),
+    getConfig: () => ipcRenderer.invoke('island:get-config'),
+    setConfig: (patch) => ipcRenderer.invoke('island:set-config', patch),
+    cycleEnded: () => ipcRenderer.send('island:cycle-ended'),
+    // Botões da ilha que mexem em tarefas e no foco: só este renderer sabe fazer.
+    onAction: (cb) => {
+      const h = (_e, action) => cb(action);
+      ipcRenderer.on('island:action', h);
+      return () => ipcRenderer.removeListener('island:action', h);
+    },
   },
 
   updates: {

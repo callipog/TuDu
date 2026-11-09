@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;" />
+<title>TuDu · Ilha</title>
+<style>
+  /* A janela é transparente e do tamanho do painel aberto; a pílula cresce aqui
+     dentro. Sem fonte externa: Inter se instalada, senão Segoe UI. */
+  :root {
+    --violet: #7C5CFF;
+    --wave: #8d6dff;
+    --fg: #fafafa;
+    --fg-dim: #a1a1aa;
+    --fg-mute: #71717a;
+    --rose: #f43f5e;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+    --font: "Inter", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: transparent;
+    font-family: var(--font); font-size: 14px; color: var(--fg);
+    -webkit-font-smoothing: antialiased; user-select: none;
+  }
+  button { font: inherit; }
+
+  /* ---------- onde a pílula mora dentro da janela ---------- */
+  .slot { position: absolute; inset: 0; padding: 12px 40px; display: flex; }
+  body[data-pos^="t"] .slot { align-items: flex-start; }
+  body[data-pos^="c"] .slot { align-items: center; }
+  body[data-pos^="b"] .slot { align-items: flex-end; }
+  body[data-pos$="l"] .slot { justify-content: flex-start; padding-left: 12px; }
+  body[data-pos$="c"] .slot { justify-content: center; }
+  body[data-pos$="r"] .slot { justify-content: flex-end; padding-right: 12px; }
+  body[data-pos="cl"] .slot, body[data-pos="cr"] .slot { justify-content: initial; }
+  body[data-pos="cl"] .slot { justify-content: flex-start; }
+  body[data-pos="cr"] .slot { justify-content: flex-end; }
+
+  .wrap { position: relative; }
+
+  /* ---------- a ilha ---------- */
+  .island {
+    position: relative;
+    width: 224px; height: 37px; border-radius: 14px;
+    background: rgba(12, 12, 15, .95);
+    border: 1px solid rgba(255,255,255,.1);
+    box-shadow: 0 14px 30px -14px rgba(0,0,0,.9);
+    overflow: hidden; cursor: default;
+    transition: width .42s var(--ease), height .42s var(--ease),
+                border-radius .42s var(--ease), border-color .3s ease, box-shadow .3s ease;
+  }
+  .island:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+  body.pinned .island { border-color: rgba(124,92,255,.45); }
+  body.raised .island {
+    border-color: rgba(244,63,94,.55);
+    box-shadow: 0 14px 30px -14px rgba(0,0,0,.9), 0 0 22px -6px rgba(244,63,94,.6);
+  }
+
+  .island[data-line="repouso"]  { width: 224px; height: 37px; border-radius: 14px; }
+  .island[data-line="proxima"]  { width: 300px; height: 45px; border-radius: 15px; }
+  .island[data-line="foco"]     { width: 314px; height: 53px; border-radius: 16px; }
+  .island[data-line="player"]   { width: 308px; height: 49px; border-radius: 16px; }
+  .island[data-line="lembrete"] { width: 324px; height: 47px; border-radius: 15px; }
+  .island[data-line="feito"]    { width: 240px; height: 41px; border-radius: 14px; }
+  .island.open { width: 358px; height: 156px; border-radius: 18px; }
+
+  .closed { position: absolute; inset: 0; transition: opacity .16s ease; }
+  .island.open .closed { opacity: 0; pointer-events: none; }
+  .crow {
+    position: absolute; inset: 0; display: flex; align-items: center; gap: 10px; padding: 0 13px;
+    opacity: 0; pointer-events: none; transform: translateY(4px);
+    transition: opacity .18s ease, transform .22s var(--ease);
+  }
+  .crow.on { opacity: 1; transform: none; transition-delay: .08s; }
+
+  .opened {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none; transition: opacity .18s ease;
+  }
+  .island.open .opened { opacity: 1; pointer-events: auto; transition-delay: .14s; }
+
+  .head { flex: 0 0 auto; height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 14px; }
+  .side { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; min-width: 26px; }
+  .stamp { flex: 1; text-align: center; white-space: nowrap; font-size: 11.5px; font-weight: 500; color: var(--fg-dim); }
+  .stamp b { color: var(--fg); font-weight: 700; font-variant-numeric: tabular-nums; margin-left: 5px; font-size: 12.5px; }
+  .crow .stamp { font-size: 11px; }
+  .crow .stamp b { font-size: 12px; }
+
+  .pages { flex: 1; position: relative; min-height: 0; }
+  .page {
+    position: absolute; inset: 0; padding: 2px 34px 0;
+    display: flex; flex-direction: column; justify-content: center; gap: 9px;
+    opacity: 0; pointer-events: none; transform: translateY(5px);
+    transition: opacity .2s ease, transform .26s var(--ease);
+  }
+  .page.on { opacity: 1; pointer-events: auto; transform: none; transition-delay: .06s; }
+  .page[data-page="player"] { justify-content: flex-start; padding-top: 3px; gap: 8px; }
+  .page[data-page="player"] .transport { margin-top: -3px; }
+
+  .nav {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 6;
+    width: 22px; height: 22px; border-radius: 99px; display: grid; place-items: center;
+    background: rgba(255,255,255,.09); border: 0; padding: 0;
+    color: var(--fg-dim); cursor: pointer; transition: background .15s, color .15s;
+  }
+  .nav:hover { background: rgba(255,255,255,.18); color: var(--fg); }
+  .nav svg { width: 12px; height: 12px; }
+  .nav.prev { left: 6px; }
+  .nav.next { right: 6px; }
+  .nav[hidden] { display: none; }
+
+  .dots { flex: 0 0 auto; height: 20px; display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .dots button {
+    width: 5px; height: 5px; padding: 0; border: 0; border-radius: 99px;
+    background: rgba(255,255,255,.26); cursor: pointer;
+    transition: width .3s var(--ease), background .2s ease;
+  }
+  .dots button[aria-current="true"] { width: 16px; background: var(--fg); }
+
+  /* ---------- peças ---------- */
+  .mark { flex: 0 0 auto; width: 22px; height: 17px; color: #e4e4e7; }
+  .mark circle { fill: var(--violet); }
+  .title { font-size: 12px; font-weight: 500; min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { font-size: 10.5px; color: var(--fg-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta { font-size: 10.5px; color: var(--fg-mute); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .badge {
+    font-size: 10px; font-weight: 600; color: #cfc4ff; background: rgba(124,92,255,.2);
+    border: 1px solid rgba(124,92,255,.35); border-radius: 99px; padding: 1px 7px; white-space: nowrap;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 99px; flex: 0 0 auto; }
+  .stack { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+  .line { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .empty { font-size: 11.5px; color: var(--fg-mute); text-align: center; }
+
+  .art {
+    flex: 0 0 auto; width: 24px; height: 24px; border-radius: 7px; overflow: hidden;
+    background: linear-gradient(140deg, #cda9f2 0%, #a97fe0 46%, #eeb9c6 100%);
+    display: grid; place-items: center;
+  }
+  .art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .art svg { width: 11px; height: 11px; color: rgba(255,255,255,.9); }
+  .art.big { width: 34px; height: 34px; border-radius: 9px; }
+  .art.big svg { width: 15px; height: 15px; }
+
+  .eq { display: flex; align-items: center; gap: 2.5px; height: 14px; flex: 0 0 auto; }
+  .eq b { width: 3px; border-radius: 2px; background: var(--wave); transform-origin: center; animation: eq .95s ease-in-out infinite; }
+  .eq b:nth-child(1) { height: 60%; animation-delay: 0s; }
+  .eq b:nth-child(2) { height: 100%; animation-delay: .16s; }
+  .eq b:nth-child(3) { height: 78%; animation-delay: .32s; }
+  .eq b:nth-child(4) { height: 55%; animation-delay: .48s; }
+  .eq.paused b { animation-play-state: paused; opacity: .5; }
+  @keyframes eq { 0%, 100% { transform: scaleY(.5); } 50% { transform: scaleY(1); } }
+
+  .ring { flex: 0 0 auto; width: 28px; height: 28px; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 3; }
+  .ring .trk { stroke: rgba(255,255,255,.12); }
+  .ring .bar { stroke: var(--violet); stroke-linecap: round; stroke-dasharray: 69.1; transition: stroke-dashoffset .6s linear; }
+  .ring.small { width: 22px; height: 22px; }
+  .ring.small circle { stroke-width: 2.2; }
+  .daybadge { position: relative; width: 22px; height: 22px; display: grid; place-items: center; font-size: 8.5px; font-weight: 700; color: var(--wave); font-variant-numeric: tabular-nums; }
+  .daybadge .ring { position: absolute; inset: 0; }
+  .daybadge .ring .bar { stroke: var(--wave); stroke-dasharray: 59.7; }
+  .timer { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .timer.xl { font-size: 19px; letter-spacing: -.02em; }
+
+  .track { display: flex; align-items: center; gap: 10px; }
+  .track .t { font-size: 11px; font-weight: 600; color: var(--fg-dim); font-variant-numeric: tabular-nums; min-width: 34px; }
+  .track .t:last-child { text-align: right; }
+  .bar { flex: 1; height: 4px; border-radius: 99px; background: rgba(255,255,255,.17); position: relative; }
+  .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 99px; background: var(--wave); }
+  .bar b { position: absolute; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 99px; background: #fff; }
+
+  .transport { display: flex; align-items: center; justify-content: center; gap: 22px; }
+  .tbtn {
+    display: grid; place-items: center; padding: 0; width: 28px; height: 28px; border-radius: 99px;
+    background: none; border: 0; color: var(--fg); cursor: pointer; transition: transform .12s;
+  }
+  .tbtn:hover { transform: scale(1.12); }
+  .tbtn:active { transform: scale(.94); }
+  .tbtn svg { width: 19px; height: 19px; }
+  .tbtn.main svg { width: 24px; height: 24px; }
+
+  .btns { display: flex; gap: 7px; }
+  .btn {
+    font-size: 11px; font-weight: 600; flex: 1; color: var(--fg-dim);
+    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 9px; padding: 6px 10px; cursor: pointer; transition: background .15s, color .15s;
+  }
+  .btn:hover { background: rgba(255,255,255,.13); color: var(--fg); }
+  .btn.primary { color: #fff; background: rgba(124,92,255,.85); border-color: rgba(124,92,255,.9); }
+  .btn.primary:hover { background: #8a6cff; }
+  .input {
+    font-size: 12.5px; width: 100%; color: var(--fg); background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 8px 11px; outline: none;
+  }
+  .input:focus { border-color: rgba(124,92,255,.6); }
+  .hint { font-size: 9.5px; color: var(--fg-mute); }
+
+  .check { flex: 0 0 auto; width: 17px; height: 17px; border-radius: 99px; background: rgba(16,185,129,.2); border: 1px solid rgba(16,185,129,.5); display: grid; place-items: center; }
+  .check svg { width: 9px; height: 9px; color: #34d399; }
+
+  .batt { display: flex; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 700; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+  .batt svg { width: 19px; height: 11px; }
+  .batt .lvl { fill: var(--wave); }
+  .batt.low { color: #fbbf24; }
+  .batt.low .lvl { fill: #fbbf24; }
+
+  .pin {
+    position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 8px;
+    width: 24px; height: 24px; border-radius: 99px; display: grid; place-items: center;
+    background: rgba(12,12,15,.92); border: 1px solid rgba(255,255,255,.12);
+    color: var(--fg-mute); cursor: pointer; opacity: 0; padding: 0;
+    transition: opacity .2s ease, color .2s ease, border-color .2s ease, background .2s ease;
+  }
+  body[data-pos$="r"] .pin { left: auto; right: 100%; margin-left: 0; margin-right: 8px; }
+  .wrap:hover .pin, body.pinned .pin { opacity: 1; }
+  .pin svg { width: 12px; height: 12px; }
+  .pin:hover { color: var(--fg); }
+  body.pinned .pin { color: #cfc4ff; background: rgba(124,92,255,.22); border-color: rgba(124,92,255,.5); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .island, .crow, .page, .opened, .closed, .dots button { transition: none; }
+    .eq b { animation: none; }
+  }
+</style>
+</head>
+<body data-pos="tc">
+  <div class="slot">
+    <div class="wrap hit" id="wrap">
+      <div class="island" id="island" data-line="repouso" tabindex="0" role="group" aria-label="Ilha do TuDu">
+        <div class="closed" id="closed"></div>
+        <div class="opened">
+          <div class="head">
+            <span class="side" id="h-left"></span>
+            <span class="stamp" id="h-stamp"></span>
+            <span class="side" id="h-right"></span>
+          </div>
+          <div class="pages" id="pages"></div>
+          <div class="dots" id="dots"></div>
+          <button class="nav prev" id="prev" type="button" aria-label="Seção anterior">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <button class="nav next" id="next" type="button" aria-label="Próxima seção">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+      <button class="pin" id="pin" type="button" aria-pressed="false" title="Fixar por cima das janelas" aria-label="Fixar por cima das janelas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+      </button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ------------------------------------------------------------ ponte --
+     No app, vem do island-preload. Abrindo este arquivo direto no navegador
+     com ?demo, um retrato de exemplo deixa conferir o desenho sem o Electron. */
+  var api = window.tuduIsland || (location.search.indexOf('demo') >= 0 ? demoApi() : null);
+  if (!api) return;
+
+  var DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  var MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  var URG = { low: '#10b981', medium: '#f59e0b', high: '#f97316', critical: '#f43f5e' };
+  var PAGE_NAME = { hoje: 'Hoje', player: 'Player', foco: 'Timer de foco', lembretes: 'Lembretes', captura: 'Nova tarefa' };
+
+  var I = {
+    mark: '<svg class="mark" viewBox="17 25 67 50" aria-hidden="true"><path d="M42 67L76 33" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round"/><circle cx="25" cy="50" r="8"/></svg>',
+    note: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3z"/></svg>',
+    check: '<svg viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 6.5 4.6 9 10 3.2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    prev: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 12 20 5v14zM3 12l9-7v14z"/></svg>',
+    next: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 12 4 19V5zm8 0-9 7V5z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6.6" y="4" width="4.4" height="16" rx="1.9"/><rect x="13" y="4" width="4.4" height="16" rx="1.9"/></svg>',
+    play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.5 4.8v14.4a1 1 0 0 0 1.5.86l11.6-7.2a1 1 0 0 0 0-1.72L9 3.94a1 1 0 0 0-1.5.86z"/></svg>'
+  };
+
+  var state = null, config = null, player = null;
+  var open = false, page = 'hoje', flash = null, flashTimer = null;
+  var closeTimer = null, over = false;
+  var battery = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var island = $('island');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function hhmm(ms) { var d = new Date(ms); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function mmss(sec) { sec = Math.max(0, Math.round(sec)); return pad(Math.floor(sec / 60)) + ':' + pad(sec % 60); }
+
+  /* ----------------------------------------------------------- peças -- */
+  function stamp() {
+    var d = new Date();
+    return DIAS[d.getDay()] + ' ' + d.getDate() + ' ' + MESES[d.getMonth()] + ' ' + d.getFullYear()
+      + ' <b>' + hhmm(d.getTime()) + '</b>';
+  }
+  function playing() { return !!(player && player.playing && sectionOn('player')); }
+  function sectionOn(k) { return !config || !config.sections || config.sections[k] !== false; }
+
+  function art(big) {
+    var cls = 'art' + (big ? ' big' : '');
+    if (player && player.art) return '<span class="' + cls + '"><img alt="" src="' + esc(player.art) + '"></span>';
+    return '<span class="' + cls + '">' + I.note + '</span>';
+  }
+  function eq() { return '<span class="eq' + (playing() ? '' : ' paused') + '" aria-hidden="true"><b></b><b></b><b></b><b></b></span>'; }
+  function ring(frac, cls) {
+    var len = cls === 'small' ? 59.7 : 69.1;
+    var r = cls === 'small' ? 9.5 : 11, c = cls === 'small' ? 11 : 14, vb = cls === 'small' ? 22 : 28;
+    var off = len * (1 - Math.max(0, Math.min(1, frac)));
+    return '<svg class="ring ' + (cls || '') + '" viewBox="0 0 ' + vb + ' ' + vb + '" aria-hidden="true">'
+      + '<circle class="trk" cx="' + c + '" cy="' + c + '" r="' + r + '"/>'
+      + '<circle class="bar" cx="' + c + '" cy="' + c + '" r="' + r + '" style="stroke-dashoffset:' + off.toFixed(1) + '"/></svg>';
+  }
+  function dayBadge() {
+    var d = state && state.day;
+    if (!d || !d.total) return '';
+    return '<span class="daybadge" title="' + d.done + ' de ' + d.total + ' feitas hoje">' + ring(d.done / d.total, 'small') + d.done + '/' + d.total + '</span>';
+  }
+  function battBadge() {
+    if (!config || !config.hasBattery || !battery) return '';
+    var pct = Math.round(battery.level * 100), w = Math.max(1.6, 12.4 * battery.level);
+    var low = battery.level < .2 && !battery.charging;
+    return '<span class="batt' + (low ? ' low' : '') + '" title="Bateria ' + pct + '%' + (battery.charging ? ', carregando' : '') + '">'
+      + '<svg viewBox="0 0 20 12" aria-hidden="true"><rect x=".7" y=".7" width="16" height="10.6" rx="3.2" fill="none" stroke="currentColor" stroke-opacity=".4" stroke-width="1.3"/>'
+      + '<rect class="lvl" x="2.1" y="2.1" width="' + w.toFixed(1) + '" height="7.8" rx="1.8"/>'
+      + '<rect x="17.8" y="4" width="1.8" height="4" rx=".9" fill="currentColor" fill-opacity=".4"/>'
+      + (battery.charging ? '<path d="M10.4 2.4 6.6 6.6h2.6l-.8 3.2 4-4.3H9.8z" fill="#0b0b10" stroke="#0b0b10" stroke-width="1.1" stroke-linejoin="round"/>' : '')
+      + '</svg>' + pct + '%</span>';
+  }
+
+  function focusLeft(f) {
+    if (!f) return 0;
+    if (f.running && f.endsAt) return Math.max(0, (f.endsAt - Date.now()) / 1000);
+    if (f.kind === 'stopwatch' && f.running && f.startedAt) return Math.max(0, (Date.now() - f.startedAt) / 1000);
+    return Math.max(0, (f.leftMs || 0) / 1000);
+  }
+  function focusFrac(f) {
+    if (!f || f.kind === 'stopwatch' || !f.totalMs) return 0;
+    return 1 - focusLeft(f) * 1000 / f.totalMs;
+  }
+  function focusLabel(f) {
+    if (!f) return '';
+    var what = f.kind === 'stopwatch' ? 'Cronômetro' : (f.mode === 'break' ? 'Pausa' : 'Foco');
+    return what + (f.cycles ? ' · ' + (f.cycles + (f.mode === 'work' ? 1 : 0)) + 'º ciclo' : '') + (f.running ? '' : ' · pausado');
+  }
+  function playerPos(p) {
+    if (!p) return 0;
+    var pos = p.position || 0;
+    if (p.playing && p.updatedAt) pos += (Date.now() - p.updatedAt) / 1000;
+    return p.duration ? Math.min(pos, p.duration) : pos;
+  }
+
+  /* -------------------------------------------------- linha fechada -- */
+  function lineKind() {
+    if (flash) return 'feito';
+    return (state && state.line && state.line.kind) || 'repouso';
+  }
+
+  function closedHtml() {
+    var k = lineKind(), l = state && state.line;
+    if (k === 'feito') {
+      return '<span class="check">' + I.check + '</span><span class="title">' + esc(flash.text) + '</span>';
+    }
+    if (k === 'proxima') {
+      return '<span class="dot" style="background:' + (URG[l.urgency] || URG.medium) + '"></span>'
+        + '<span class="title">' + esc(l.title) + '</span>'
+        + '<span class="badge">em ' + l.minutes + ' min</span>';
+    }
+    if (k === 'foco') {
+      var f = state.focus || l;
+      return ring(focusFrac(f))
+        + '<span class="stack"><span class="title">' + esc(f.taskTitle || l.title || 'Foco') + '</span><span class="sub">' + esc(focusLabel(f)) + '</span></span>'
+        + '<span class="timer" data-live="focus">' + mmss(focusLeft(f)) + '</span>';
+    }
+    if (k === 'player') {
+      return art(false)
+        + '<span class="stack"><span class="title">' + esc(l.title) + '</span><span class="sub">' + esc(l.artist) + '</span></span>'
+        + eq();
+    }
+    if (k === 'lembrete') {
+      return '<span class="dot" style="background:' + (l.critical ? URG.critical : URG.medium) + '"></span>'
+        + '<span class="title" style="font-weight:600">' + esc(l.title) + '</span>'
+        + '<span class="meta">' + esc(l.meta) + '</span>';
+    }
+    // repouso: capa (ou a marca) | data e hora | ondas (ou o progresso do dia)
+    var tocando = l && l.playing;
+    return '<span class="side">' + (tocando ? art(false) : I.mark) + '</span>'
+      + '<span class="stamp" data-live="stamp">' + stamp() + '</span>'
+      + '<span class="side">' + (tocando ? eq() : dayBadge()) + '</span>';
+  }
+
+  /* -------------------------------------------------- painel aberto -- */
+  function pageHtml(p) {
+    if (p === 'hoje') {
+      var n = state && state.next, d = state && state.day;
+      var first = n
+        ? '<div class="line"><span class="dot" style="background:' + (URG[n.urgency] || URG.medium) + '"></span>'
+          + '<span class="title">' + esc(n.title) + '</span><span class="meta">' + hhmm(n.dueAt) + '</span></div>'
+        : '<div class="empty">Nada com horário pela frente.</div>';
+      var rest = d && d.total ? (d.total - d.done) : 0;
+      var sub = d && d.total
+        ? (rest ? (rest === 1 ? 'falta 1 hoje' : 'faltam ' + rest + ' hoje') : 'tudo feito hoje') + ' · ' + d.done + ' de ' + d.total + ' feitas'
+        : 'nada marcado para hoje';
+      return first + '<div class="line"><span class="sub">' + sub + '</span></div>'
+        + '<div class="btns">'
+        + (sectionOn('captura') ? '<button class="btn primary" data-go="captura">Nova tarefa</button>' : '')
+        + (sectionOn('foco') ? '<button class="btn" data-act="focus" data-op="start">Foco</button>' : '')
+        + '<button class="btn" data-act="open-app">Abrir TuDu</button></div>';
+    }
+    if (p === 'player') {
+      if (!player) return '<div class="empty">Nada tocando agora.</div><div class="hint" style="text-align:center">Spotify, YouTube no navegador ou qualquer player que apareça no controle de volume do Windows.</div>';
+      var pos = playerPos(player), dur = player.duration || 0, frac = dur ? pos / dur : 0;
+      return '<div class="line">' + art(true)
+        + '<span class="stack"><span class="title" style="font-size:13.5px;font-weight:600">' + esc(player.title) + '</span><span class="sub">' + esc(player.artist) + '</span></span></div>'
+        + '<div class="track"><span class="t" data-live="pos">' + mmss(pos) + '</span>'
+        + '<span class="bar"><i data-live="fill" style="width:' + (frac * 100).toFixed(1) + '%"></i><b data-live="knob" style="left:' + (frac * 100).toFixed(1) + '%"></b></span>'
+        + '<span class="t" data-live="left">' + (dur ? '-' + mmss(dur - pos) : '') + '</span></div>'
+        + '<div class="transport">'
+        + '<button class="tbtn" data-media="prev" aria-label="Faixa anterior">' + I.prev + '</button>'
+        + '<button class="tbtn main" data-media="toggle" aria-label="' + (player.playing ? 'Pausar' : 'Tocar') + '">' + (player.playing ? I.pause : I.play) + '</button>'
+        + '<button class="tbtn" data-media="next" aria-label="Próxima faixa">' + I.next + '</button></div>';
+    }
+    if (p === 'foco') {
+      var f = state && state.focus;
+      if (!f) return '<div class="empty">Nenhum foco agora.</div><div class="btns"><button class="btn primary" data-act="focus" data-op="start">Começar foco</button></div>';
+      var fr = focusFrac(f), total = f.totalMs ? f.totalMs / 1000 : 0, left = focusLeft(f);
+      return '<div class="line">' + ring(fr)
+        + '<span class="stack"><span class="title" style="font-weight:600">' + esc(f.taskTitle || (f.mode === 'break' ? 'Pausa' : 'Foco')) + '</span><span class="sub">' + esc(focusLabel(f)) + '</span></span>'
+        + '<span class="timer xl" data-live="focus">' + mmss(left) + '</span></div>'
+        + (f.kind === 'pomodoro'
+          ? '<div class="track"><span class="t" data-live="focus-el">' + mmss(total - left) + '</span><span class="bar"><i data-live="focus-fill" style="width:' + (fr * 100).toFixed(1) + '%;background:var(--violet)"></i><b data-live="focus-knob" style="left:' + (fr * 100).toFixed(1) + '%"></b></span><span class="t" data-live="focus-left">-' + mmss(left) + '</span></div>'
+          : '')
+        + '<div class="btns"><button class="btn primary" data-act="focus" data-op="toggle">' + (f.running ? 'Pausar' : 'Continuar') + '</button>'
+        + (f.kind === 'pomodoro' ? '<button class="btn" data-act="focus" data-op="skip">Pular</button>' : '')
+        + '<button class="btn" data-act="focus" data-op="finish">Encerrar</button></div>';
+    }
+    if (p === 'lembretes') {
+      var rs = (state && state.reminders) || [];
+      if (!rs.length) return '<div class="empty">Nenhum lembrete pendente.</div>';
+      var r = rs[0];
+      var fresh = Date.now() - r.firedAt < 60000;
+      var subl = rs.length > 1
+        ? '+' + (rs.length - 1) + (rs.length - 1 === 1 ? ' outro esperando' : ' outros esperando')
+        : 'Venceu às ' + hhmm(r.firedAt) + (r.urgency === 'critical' ? ' · prioridade crítica' : '');
+      return '<div class="line"><span class="dot" style="background:' + (URG[r.urgency] || URG.medium) + '"></span>'
+        + '<span class="title" style="font-weight:600">' + esc(r.title) + '</span><span class="meta">' + (fresh ? 'agora' : hhmm(r.firedAt)) + '</span></div>'
+        + '<div class="line"><span class="sub">' + esc(subl) + '</span></div>'
+        + '<div class="btns"><button class="btn primary" data-act="task-complete" data-task="' + esc(r.taskId) + '">Concluir</button>'
+        + '<button class="btn" data-act="task-snooze" data-id="' + esc(r.id) + '">+10 min</button>'
+        + '<button class="btn" data-act="task-open" data-task="' + esc(r.taskId) + '">Abrir</button></div>';
+    }
+    if (p === 'captura') {
+      return '<input class="input" id="qa" type="text" maxlength="500" placeholder="Nova tarefa — amanhã 9h #projeto !alta" aria-label="Nova tarefa" autocomplete="off">'
+        + '<div class="hint">Enter para salvar · Esc para fechar</div>';
+    }
+    return '';
+  }
+
+  function pages() { return (state && state.pages) || ['hoje']; }
+
+  /* --------------------------------------------------------- desenho -- */
+  var lastClosed = '';
+  function render() {
+    var k = lineKind();
+    island.dataset.line = k;
+    island.classList.toggle('open', open);
+    document.body.classList.toggle('pinned', !!(config && config.pinned));
+    document.body.classList.toggle('raised', !!(state && state.raise && config && config.raiseCritical && !config.pinned));
+    document.body.dataset.pos = (config && config.position) || 'tc';
+    $('pin').setAttribute('aria-pressed', String(!!(config && config.pinned)));
+
+    var html = closedHtml();
+    if (html !== lastClosed) {
+      lastClosed = html;
+      $('closed').innerHTML = '<div class="crow on">' + html + '</div>';
+    }
+
+    $('h-left').innerHTML = battBadge();
+    $('h-stamp').innerHTML = stamp();
+    $('h-right').innerHTML = playing() ? eq() : I.mark;
+
+    var ps = pages();
+    if (ps.indexOf(page) < 0) page = ps[0];
+    var keepInput = page === 'captura' && $('qa') && document.activeElement === $('qa');
+    if (!keepInput) {
+      $('pages').innerHTML = ps.map(function (p) {
+        return '<div class="page' + (p === page ? ' on' : '') + '" data-page="' + p + '">' + (p === page ? pageHtml(p) : '') + '</div>';
+      }).join('');
+    }
+    $('dots').innerHTML = ps.map(function (p) {
+      return '<button type="button" data-goto="' + p + '" aria-label="' + PAGE_NAME[p] + '" aria-current="' + (p === page) + '"></button>';
+    }).join('');
+    $('prev').hidden = $('next').hidden = ps.length < 2;
+  }
+
+  /* Só o que corre com o relógio, sem redesenhar o resto. */
+  function tickLive() {
+    document.querySelectorAll('[data-live="stamp"]').forEach(function (el) { el.innerHTML = stamp(); });
+    if (open) $('h-stamp').innerHTML = stamp();
+    var f = state && state.focus;
+    if (f) {
+      var left = focusLeft(f), fr = (focusFrac(f) * 100).toFixed(1) + '%';
+      document.querySelectorAll('[data-live="focus"]').forEach(function (el) { el.textContent = mmss(left); });
+      var fq = function (s) { return document.querySelector('[data-live="' + s + '"]'); };
+      if (fq('focus-left')) fq('focus-left').textContent = '-' + mmss(left);
+      if (fq('focus-el') && f.totalMs) fq('focus-el').textContent = mmss(f.totalMs / 1000 - left);
+      if (fq('focus-fill')) fq('focus-fill').style.width = fr;
+      if (fq('focus-knob')) fq('focus-knob').style.left = fr;
+    }
+    if (player && open && page === 'player') {
+      var pos = playerPos(player), dur = player.duration || 0, frac = dur ? pos / dur * 100 : 0;
+      var q = function (s) { return document.querySelector('[data-live="' + s + '"]'); };
+      if (q('pos')) q('pos').textContent = mmss(pos);
+      if (q('left') && dur) q('left').textContent = '-' + mmss(dur - pos);
+      if (q('fill')) q('fill').style.width = frac.toFixed(1) + '%';
+      if (q('knob')) q('knob').style.left = frac.toFixed(1) + '%';
+    }
+  }
+
+  /* ------------------------------------------------------- abrir/fechar -- */
+  function setOpen(v, entry) {
+    if (v && !open) page = entry || (state && state.entryPage) || 'hoje';
+    if (open === v) { if (v && entry) { page = entry; render(); } return; }
+    open = v;
+    render();
+    if (open && page === 'captura') focusInput();
+  }
+  function focusInput() { setTimeout(function () { var i = $('qa'); if (i) i.focus(); }, 60); }
+  function scheduleClose() {
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(function () {
+      var i = $('qa');
+      if (i && document.activeElement === i && i.value.trim()) return; // digitando: não some
+      setOpen(false);
+    }, 380);
+  }
+  function go(p) {
+    page = p;
+    if (!open) open = true;
+    render();
+    if (p === 'captura') focusInput();
+  }
+  function step(dir) {
+    var ps = pages(), i = Math.max(0, ps.indexOf(page));
+    go(ps[(i + dir + ps.length) % ps.length]);
+  }
+  function showFlash(text) {
+    clearTimeout(flashTimer);
+    flash = { text: text };
+    open = false;
+    render();
+    flashTimer = setTimeout(function () { flash = null; render(); }, 1700);
+  }
+
+  /* ----------------------------------------------------------- mouse --
+     A janela deixa o clique atravessar; avisamos o processo principal quando
+     o mouse entra ou sai da pílula para ela passar a capturar. */
+  function setOver(v) {
+    if (v === over) return;
+    over = v;
+    api.hit(v);
+    if (v) {
+      clearTimeout(closeTimer);
+      if (config && config.hoverOpen !== false) setOpen(true);
+    } else if (open) {
+      scheduleClose();
+    }
+  }
+  document.addEventListener('mousemove', function (e) { setOver(!!(e.target.closest && e.target.closest('.hit'))); });
+  document.addEventListener('mouseleave', function () { setOver(false); });
+
+  island.addEventListener('click', function (e) {
+    var t = e.target;
+    var goBtn = t.closest('[data-go]');
+    if (goBtn) { go(goBtn.dataset.go); return; }
+    var dotBtn = t.closest('[data-goto]');
+    if (dotBtn) { go(dotBtn.dataset.goto); return; }
+    if (t.closest('#prev')) { step(-1); return; }
+    if (t.closest('#next')) { step(1); return; }
+    var m = t.closest('[data-media]');
+    if (m) { api.action({ type: 'media', op: m.dataset.media }); return; }
+    var a = t.closest('[data-act]');
+    if (a) {
+      var type = a.dataset.act;
+      api.action({ type: type, op: a.dataset.op, taskId: a.dataset.task, id: a.dataset.id });
+      if (type === 'task-complete') showFlash('Concluída');
+      else if (type === 'task-snooze') showFlash('Adiado por 10 minutos');
+      else if (type === 'focus' && a.dataset.op === 'start') go('foco');
+      else if (type === 'task-open' || type === 'open-app') setOpen(false);
+      return;
+    }
+    if (t.closest('.input')) return;
+    // Clique na pílula: abre (útil com "abrir ao passar o mouse" desligado).
+    if (!open) setOpen(true);
+  });
+
+  $('pin').addEventListener('click', function () {
+    api.action({ type: 'pin', value: !(config && config.pinned) });
+  });
+
+  document.addEventListener('keydown', function (e) {
+    var inInput = e.target && e.target.id === 'qa';
+    if (inInput) {
+      if (e.key === 'Enter') {
+        var text = e.target.value.trim();
+        if (text) { api.action({ type: 'capture', text: text }); e.target.value = ''; e.target.blur(); }
+      } else if (e.key === 'Escape') {
+        e.target.value = ''; e.target.blur(); setOpen(false);
+      }
+      return;
+    }
+    if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+    else if (e.key === 'Escape') setOpen(false);
+  });
+
+  /* ---------------------------------------------------------- dados -- */
+  api.onState(function (s) { state = s; render(); });
+  api.onConfig(function (c) { config = c; render(); });
+  api.onPlayer(function (p) { player = p; render(); });
+  api.onSaved(function (title) { showFlash(title ? 'Criada: ' + title : 'Tarefa criada'); });
+
+  api.init().then(function (init) {
+    if (!init) return;
+    state = init.state; config = init.config; player = init.player;
+    render();
+  });
+
+  if (navigator.getBattery) {
+    navigator.getBattery().then(function (b) {
+      function sync() { battery = { level: b.level, charging: b.charging }; render(); }
+      b.addEventListener('levelchange', sync);
+      b.addEventListener('chargingchange', sync);
+      sync();
+    }).catch(function () {});
+  }
+
+  setInterval(tickLive, 1000);
+  // A linha fechada também anda com o tempo (o "em N min", o anel do foco).
+  setInterval(function () { lastClosed = ''; if (!open) render(); }, 15000);
+
+  /* ----------------------------------------------------------- demo -- */
+  function demoApi() {
+    var now = Date.now();
+    var s = {
+      line: { kind: 'repouso', playing: true, done: 3, total: 7 },
+      entryPage: 'player', pages: ['hoje', 'player', 'foco', 'lembretes', 'captura'], raise: false, muted: false,
+      reminders: [{ id: 'a:due:x', taskId: 'a', title: 'Revisar notas da 1.11', urgency: 'critical', firedAt: now - 120000 }],
+      next: { id: 'b', title: 'Glow nas bordas do board', dueAt: now + 20 * 60000, urgency: 'high' },
+      focus: { running: true, kind: 'pomodoro', mode: 'work', endsAt: now + 17 * 60000, leftMs: 17 * 60000, totalMs: 25 * 60000, taskTitle: 'Wordmark em TuDu', cycles: 1 },
+      day: { done: 3, total: 7 }
+    };
+    var c = { enabled: true, position: 'tc', pinned: false, hoverOpen: true, raiseCritical: true, pauseAtCycleEnd: true, hasBattery: true, sections: { player: true, foco: true, lembretes: true, captura: true } };
+    var p = { title: 'Noites de Verão', artist: 'Lua Azul — Ao Vivo', playing: true, position: 61, duration: 213, updatedAt: now, art: null };
+    var noop = function () { return function () {}; };
+    window.__demo = { state: s, config: c };
+    return {
+      init: function () { return Promise.resolve({ state: s, config: c, player: p }); },
+      onState: noop, onConfig: noop, onPlayer: noop, onSaved: noop,
+      hit: function () {}, action: function (a) { console.log('ação', JSON.stringify(a)); }
+    };
+  }
+})();
+</script>
+</body>
+</html>

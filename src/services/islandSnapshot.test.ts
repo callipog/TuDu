@@ -12,7 +12,7 @@ function task(id: string, extra: Partial<Task> = {}): Task {
   return { id, title: 'Tarefa ' + id, urgency: 'medium', tags: [], completed: false, ...extra } as unknown as Task;
 }
 
-const idle: FocusInput = { running: false, active: false, kind: 'pomodoro', mode: 'work', leftSeconds: 1500, focusId: '', cycles: 0 };
+const idle: FocusInput = { running: false, active: false, kind: 'pomodoro', mode: 'work', leftSeconds: 1500, elapsedSeconds: 0, workMinutes: 25, breakMinutes: 5, focusId: '', cycles: 0 };
 
 function pending(t: Task, firedAt = NOW): PendingReminder {
   return { id: `${t.id}:due:${t.dueDate}`, taskId: t.id, title: t.title, urgency: t.urgency, firedAt };
@@ -72,11 +72,29 @@ test('o progresso do dia conta só o que vence hoje', () => {
 
 test('foco: vai o instante do fim do bloco e o título da tarefa em foco', () => {
   const tasks = [task('w', { title: 'Wordmark em TuDu' })];
-  const focus: FocusInput = { running: true, active: true, kind: 'pomodoro', mode: 'work', leftSeconds: 1062, focusId: 'w', cycles: 1 };
+  const focus: FocusInput = { ...idle, running: true, active: true, leftSeconds: 1062, focusId: 'w', cycles: 1 };
   const s = buildIslandSnapshot({ tasks, pending: [], focus, now: NOW });
   assert.equal(s.focus?.running, true);
   assert.equal(s.focus?.endsAt, NOW + 1062_000);
   assert.equal(s.focus?.taskTitle, 'Wordmark em TuDu');
+  assert.equal(s.focus?.totalMs, 25 * 60_000);
+  assert.equal(s.focus?.leftMs, 1062_000);
+});
+
+test('foco pausado leva quanto sobra, para a ilha mostrar o tempo parado', () => {
+  const s = buildIslandSnapshot({ tasks: [], pending: [], focus: { ...idle, active: true, mode: 'break', leftSeconds: 120 }, now: NOW });
+  assert.equal(s.focus?.endsAt, null);
+  assert.equal(s.focus?.leftMs, 120_000);
+  assert.equal(s.focus?.totalMs, 5 * 60_000);
+});
+
+test('lembrete adiado some até o fim do adiamento e volta como recém-vencido', () => {
+  const t = task('a', { dueDate: iso(NOW - 60_000) });
+  const adiado = { ...pending(t, NOW - 60_000), snoozedUntil: NOW + 10 * 60_000 };
+  assert.deepEqual(buildIslandSnapshot({ tasks: [t], pending: [adiado], focus: idle, now: NOW }).reminders, []);
+  const depois = buildIslandSnapshot({ tasks: [t], pending: [adiado], focus: idle, now: NOW + 11 * 60_000 });
+  assert.equal(depois.reminders.length, 1);
+  assert.equal(depois.reminders[0].firedAt, NOW + 10 * 60_000);
 });
 
 test('foco parado e sem sessão não vai; cronômetro não tem fim de bloco', () => {

@@ -29,7 +29,15 @@ export function useIslandSources(tasks: Task[], pomo: Pomodoro) {
     return () => clearInterval(id);
   }, []);
 
-  const { running, active, kind, mode, focusId, cycles, leftSeconds } = pomo;
+  const { running, active, kind, mode, focusId, cycles, leftSeconds, elapsedSeconds, workMinutes, breakMinutes } = pomo;
+
+  // Um bloco de trabalho fechou (o contador de ciclos sobe): o processo
+  // principal pausa a música, se a pessoa pediu isso nas configurações.
+  const cyclesRef = useRef(cycles);
+  useEffect(() => {
+    if (cycles > cyclesRef.current) window.tudu?.island?.cycleEnded();
+    cyclesRef.current = cycles;
+  }, [cycles]);
 
   useEffect(() => {
     const island = typeof window !== 'undefined' ? window.tudu?.island : undefined;
@@ -37,15 +45,15 @@ export function useIslandSources(tasks: Task[], pomo: Pomodoro) {
     const snapshot = buildIslandSnapshot({
       tasks,
       pending: notificationService.getPending(),
-      focus: { running, active, kind, mode, leftSeconds, focusId, cycles },
+      focus: { running, active, kind, mode, leftSeconds, elapsedSeconds, workMinutes, breakMinutes, focusId, cycles },
       now: Date.now(),
     });
     const key = JSON.stringify(snapshot);
     if (key === lastRef.current) return;
     lastRef.current = key;
     island.publish(snapshot);
-    // `leftSeconds` fica de fora de propósito: muda a cada segundo, e o retrato
+    // `leftSeconds` e `elapsedSeconds` ficam de fora de propósito: mudam a cada segundo, e o retrato
     // só precisa dele no instante em que o foco liga, pausa ou troca de bloco.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, pendingVersion, clock, running, active, kind, mode, focusId, cycles]);
+  }, [tasks, pendingVersion, clock, running, active, kind, mode, focusId, cycles, workMinutes, breakMinutes]);
 }
