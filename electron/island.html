@@ -96,6 +96,7 @@
     transition: opacity .2s ease, transform .26s var(--ease);
   }
   .page.on { opacity: 1; pointer-events: auto; transform: none; transition-delay: .06s; }
+  .page.ghost { opacity: 1; pointer-events: none; transform: none; transition: none; z-index: 0; }
   .page[data-page="player"] { justify-content: flex-start; padding-top: 3px; gap: 8px; }
   .page[data-page="player"] .transport { margin-top: -3px; }
 
@@ -505,9 +506,16 @@
         return '<div class="page' + (p === page ? ' on' : '') + '" data-page="' + p + '">' + (p === page ? pageHtml(p) : '') + '</div>';
       }).join('');
     }
-    $('dots').innerHTML = ps.map(function (p) {
-      return '<button type="button" data-goto="' + p + '" aria-label="' + PAGE_NAME[p] + '" aria-current="' + (p === page) + '"></button>';
-    }).join('');
+    // Mesmas seções: só troca o ponto aceso, para a pílula deslizar de um ao outro.
+    var dots = $('dots');
+    if (dots.dataset.keys === ps.join(',')) {
+      dots.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-current', String(b.dataset.goto === page)); });
+    } else {
+      dots.dataset.keys = ps.join(',');
+      dots.innerHTML = ps.map(function (p) {
+        return '<button type="button" data-goto="' + p + '" aria-label="' + PAGE_NAME[p] + '" aria-current="' + (p === page) + '"></button>';
+      }).join('');
+    }
     $('prev').hidden = $('next').hidden = ps.length < 2;
   }
 
@@ -552,16 +560,51 @@
       setOpen(false);
     }, 380);
   }
-  function go(p) {
+  function go(p, dir) {
+    var from = page;
+    var leaving = open && from !== p ? document.querySelector('#pages .page.on') : null;
+    if (!dir) { var ps = pages(); dir = ps.indexOf(p) >= ps.indexOf(from) ? 1 : -1; }
     page = p;
     remember(p);
     if (!open) open = true;
     render();
+    if (leaving) slide(leaving, dir);
     if (p === 'captura') focusInput();
   }
   function step(dir) {
     var ps = pages(), i = Math.max(0, ps.indexOf(page));
-    go(ps[(i + dir + ps.length) % ps.length]);
+    go(ps[(i + dir + ps.length) % ps.length], dir);
+  }
+
+  /* Troca de seção: a que sai escorrega para um lado e apaga, a que entra vem
+     do outro. dir 1 = para a frente (vem da direita), -1 = para trás. */
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var SLIDE_EASE = 'cubic-bezier(.22, 1, .36, 1)';
+  function slide(leaving, dir) {
+    var box = $('pages'), entering = box.querySelector('.page.on');
+    if (reduceMotion || !entering || !entering.animate) return;
+    var ghost = leaving.cloneNode(true);
+    ghost.classList.remove('on');
+    ghost.classList.add('ghost');
+    ghost.querySelectorAll('[data-live]').forEach(function (el) { el.removeAttribute('data-live'); });
+    box.appendChild(ghost);
+    ghost.animate([
+      { opacity: 1, transform: 'translateX(0)', filter: 'blur(0)' },
+      { opacity: 0, transform: 'translateX(' + (-dir * 34) + 'px) scale(.97)', filter: 'blur(3px)' },
+    ], { duration: 230, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' })
+      .onfinish = function () { ghost.remove(); };
+    entering.animate([
+      { opacity: 0, transform: 'translateX(' + (dir * 40) + 'px) scale(.97)', filter: 'blur(3px)' },
+      { opacity: 1, transform: 'translateX(0) scale(1)', filter: 'blur(0)' },
+    ], { duration: 360, delay: 40, easing: SLIDE_EASE, fill: 'backwards' });
+    var arrow = $(dir > 0 ? 'next' : 'prev');
+    if (arrow && arrow.animate) {
+      arrow.animate([
+        { transform: 'translateY(-50%) translateX(0)' },
+        { transform: 'translateY(-50%) translateX(' + (dir * 3) + 'px)' },
+        { transform: 'translateY(-50%) translateX(0)' },
+      ], { duration: 260, easing: SLIDE_EASE });
+    }
   }
   function showFlash(text) {
     clearTimeout(flashTimer);

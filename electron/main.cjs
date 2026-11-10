@@ -12,6 +12,7 @@ const bridge = require('./bridge.cjs');
 const { createIslandHub } = require('./island.cjs');
 const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, WINDOW_W, WINDOW_H } = require('./island-config.cjs');
 const { createMediaBridge, forQueue, forIsland } = require('./media.cjs');
+const { createDesktopWatch } = require('./desktop-watch.cjs');
 const isDev = process.env.NODE_ENV === 'development';
 
 // Auto-update (só funciona em builds empacotados e publicados no GitHub Releases).
@@ -108,6 +109,11 @@ const media = createMediaBridge({
     islandHub.setPlayer(forQueue(p));
     sendIsland('island:player', forIsland(p));
   },
+});
+
+// Win+D põe a área de trabalho na frente de tudo; o vigia sobe a ilha junto.
+const desktopWatch = createDesktopWatch({
+  onChange: (on, cls) => { if (isDev) console.log('[ilha] área de trabalho', on ? 'à vista' : 'coberta', cls); },
 });
 
 function createSplash() {
@@ -436,6 +442,8 @@ function applyIslandZ(force) {
   if (top === islandOnTop && !force) return;
   islandOnTop = top;
   islandWindow.setAlwaysOnTop(top, 'floating');
+  // Fora do alfinete/crítico, quem decide é o vigia da área de trabalho.
+  desktopWatch.setAuto(!top);
   // Subir sem roubar o foco de quem está digitando em outro app.
   if (top) islandWindow.showInactive();
 }
@@ -502,6 +510,7 @@ function createIslandWindow() {
     if (!islandWindow || islandWindow.isDestroyed()) return;
     islandWindow.showInactive();
     applyIslandZ(true);
+    desktopWatch.setTarget(islandWindow);
   });
   // "Mostrar área de trabalho" (Win+D) e "Minimizar tudo" minimizam a ilha
   // junto com o resto — justo quando a área de trabalho, que é o lugar dela,
@@ -510,6 +519,7 @@ function createIslandWindow() {
   islandWindow.on('closed', () => {
     islandWindow = null;
     watchIsland(false);
+    desktopWatch.setTarget(null);
     if (islandUnsub) { islandUnsub(); islandUnsub = null; }
   });
   islandUnsub = islandHub.subscribe((state) => {
