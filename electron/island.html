@@ -281,6 +281,16 @@
   var state = null, config = null, player = null;
   var open = false, page = 'hoje', flash = null, flashTimer = null;
   var closeTimer = null, over = false;
+
+  /* A ilha reabre na última seção que você olhou, e lembra dela até depois de
+     reiniciar o app. Sem histórico, entra pela seção que a fila sugere. */
+  var LAST_KEY = 'tudu_island_last_page';
+  var lastPage = null;
+  try { lastPage = localStorage.getItem(LAST_KEY); } catch (e) { /* sem armazenamento */ }
+  function remember(p) {
+    lastPage = p;
+    try { localStorage.setItem(LAST_KEY, p); } catch (e) { /* ignore */ }
+  }
   var battery = null;
 
   var $ = function (id) { return document.getElementById(id); };
@@ -487,7 +497,8 @@
     $('h-right').innerHTML = playing() ? eq() : I.mark;
 
     var ps = pages();
-    if (ps.indexOf(page) < 0) page = ps[0];
+    // A seção lembrada pode ter sido desligada nas Configurações.
+    if (ps.indexOf(page) < 0) page = state && ps.indexOf(state.entryPage) >= 0 ? state.entryPage : ps[0];
     var keepInput = page === 'captura' && $('qa') && document.activeElement === $('qa');
     if (!keepInput) {
       $('pages').innerHTML = ps.map(function (p) {
@@ -526,7 +537,7 @@
 
   /* ------------------------------------------------------- abrir/fechar -- */
   function setOpen(v, entry) {
-    if (v && !open) page = entry || (state && state.entryPage) || 'hoje';
+    if (v && !open) page = entry || lastPage || (state && state.entryPage) || 'hoje';
     if (open === v) { if (v && entry) { page = entry; render(); } return; }
     open = v;
     render();
@@ -543,6 +554,7 @@
   }
   function go(p) {
     page = p;
+    remember(p);
     if (!open) open = true;
     render();
     if (p === 'captura') focusInput();

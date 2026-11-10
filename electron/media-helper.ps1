@@ -45,18 +45,31 @@ try {
 
 Emit @{ t = 'ready' }
 
-# Capa: le o stream inteiro e devolve como data URL. Limitada a 600 KB para
+# Capa: le a imagem inteira e devolve como data URL. Limitada a 600 KB para
 # nao entupir o IPC com uma imagem gigante.
+#
+# O stream chega ao PowerShell como um __ComObject "cru": ele nao enxerga os
+# metodos (nem o tamanho) do IRandomAccessStream. O caminho que funciona e o
+# adaptador do .NET (AsStreamForRead) chamado por reflexao, porque ai o
+# runtime faz a conversao de interface que o PowerShell nao sabe fazer.
+$null = [Windows.Storage.Streams.IInputStream, Windows.Storage.Streams, ContentType = WindowsRuntime]
+$asStream = [System.IO.WindowsRuntimeStreamExtensions].GetMethod('AsStreamForRead', [Type[]]@([Windows.Storage.Streams.IInputStream]))
+
 function Read-Art($props) {
   try {
-    if ($null -eq $props.Thumbnail) { return $null }
+    if ($null -eq $props -or $null -eq $props.Thumbnail) { return $null }
     $stream = Await ($props.Thumbnail.OpenReadAsync()) $tStream
-    if ($null -eq $stream -or $stream.Size -eq 0 -or $stream.Size -gt 600KB) { return $null }
-    $reader = New-Object Windows.Storage.Streams.DataReader($stream.GetInputStreamAt(0))
-    $null = Await ($reader.LoadAsync([uint32]$stream.Size)) ([uint32])
-    $bytes = New-Object byte[] ([int]$stream.Size)
-    $reader.ReadBytes($bytes)
-    $mime = if ($stream.ContentType) { $stream.ContentType } else { 'image/png' }
+    if ($null -eq $stream) { return $null }
+    $net = $asStream.Invoke($null, @($stream))
+    $ms = New-Object System.IO.MemoryStream
+    $net.CopyTo($ms)
+    $bytes = $ms.ToArray()
+    $net.Dispose()
+    if ($bytes.Length -lt 16 -or $bytes.Length -gt 600KB) { return $null }
+    # O tipo vem pelos primeiros bytes: o ContentType tambem nao atravessa.
+    $mime = 'image/png'
+    if ($bytes[0] -eq 0xFF -and $bytes[1] -eq 0xD8) { $mime = 'image/jpeg' }
+    elseif ($bytes[0] -eq 0x52 -and $bytes[1] -eq 0x49 -and $bytes[8] -eq 0x57) { $mime = 'image/webp' }
     return "data:$mime;base64," + [Convert]::ToBase64String($bytes)
   } catch {
     return $null
@@ -67,6 +80,8 @@ $stdin = New-Object System.IO.StreamReader([Console]::OpenStandardInput())
 $pendingLine = $stdin.ReadLineAsync()
 $lastJson = ''
 $lastTrack = ''
+$artTries = 0
+$artDone = $false
 $tick = 0
 
 while ($true) {
@@ -122,10 +137,19 @@ while ($true) {
         [Console]::Out.Flush()
       }
       # A capa vai depois do estado da faixa, que e quando o TuDu ja sabe a
-      # que faixa ela pertence. So quando a faixa muda: e o dado mais pesado.
-      if ($session -and $title -and $track -ne $lastTrack) {
-        $lastTrack = $track
-        Emit @{ t = 'art'; track = $track; data = (Read-Art $props) }
+      # que faixa ela pertence. E o dado mais pesado, entao so e lida quando a
+      # faixa muda — mas o Spotify as vezes publica a imagem um instante depois
+      # do titulo, entao tenta de novo nas leituras seguintes (ate ~5s).
+      if ($session -and $title) {
+        if ($track -ne $lastTrack) { $lastTrack = $track; $artTries = 0; $artDone = $false }
+        if (-not $artDone -and $artTries -lt 5) {
+          $artTries++
+          $art = Read-Art $props
+          if ($art) {
+            $artDone = $true
+            Emit @{ t = 'art'; track = $track; data = $art }
+          }
+        }
       }
     }
   } catch {

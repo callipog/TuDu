@@ -452,6 +452,22 @@ function detectBattery() {
     });
 }
 
+function unminimizeIsland() {
+  if (!islandWindow || islandWindow.isDestroyed() || !islandWindow.isMinimized()) return;
+  // showInactive restaura do minimizado sem ativar (SW_SHOWNOACTIVATE). Se o
+  // Windows insistir, restore() resolve, mesmo puxando o foco.
+  islandWindow.showInactive();
+  if (islandWindow.isMinimized()) islandWindow.restore();
+  applyIslandZ(true);
+}
+
+/* Rede de segurança: nem todo caminho de "minimizar tudo" dispara o evento. */
+let islandWatchdog = null;
+function watchIsland(on) {
+  if (on && !islandWatchdog) islandWatchdog = setInterval(unminimizeIsland, 1500);
+  if (!on && islandWatchdog) { clearInterval(islandWatchdog); islandWatchdog = null; }
+}
+
 function createIslandWindow() {
   islandWindow = new BrowserWindow({
     width: WINDOW_W,
@@ -487,8 +503,13 @@ function createIslandWindow() {
     islandWindow.showInactive();
     applyIslandZ(true);
   });
+  // "Mostrar área de trabalho" (Win+D) e "Minimizar tudo" minimizam a ilha
+  // junto com o resto — justo quando a área de trabalho, que é o lugar dela,
+  // fica à vista. Ela volta sozinha, sem roubar o foco.
+  islandWindow.on('minimize', () => setTimeout(unminimizeIsland, 60));
   islandWindow.on('closed', () => {
     islandWindow = null;
+    watchIsland(false);
     if (islandUnsub) { islandUnsub(); islandUnsub = null; }
   });
   islandUnsub = islandHub.subscribe((state) => {
@@ -496,6 +517,7 @@ function createIslandWindow() {
     sendIsland('island:state', state);
     applyIslandZ();
   });
+  watchIsland(true);
   detectBattery();
 }
 
