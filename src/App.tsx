@@ -49,11 +49,13 @@ import { backupService } from './services/backup';
 import { taskMatches } from './services/search';
 import { attachmentService } from './services/attachments';
 import { useSortableList } from './hooks/useSortableList';
+import { LongWordText } from './components/LongWordText';
+import { TaskSidePanel } from './components/TaskSidePanel';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 import { projectService, sortEpics } from './services/projects';
 import { personaService } from './services/personas';
-import { columnsFor, statusLabel as resolveStatusLabel, statusColor as resolveStatusColor } from './services/boards';
+import { columnsFor, doneColumnId, statusLabel as resolveStatusLabel, statusColor as resolveStatusColor } from './services/boards';
 import { format, isToday, isSameDay, isPast, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -388,6 +390,27 @@ export default function App() {
       console.error('Failed to toggle task', err);
     }
   }
+
+  /* ---- Painel lateral ("ver tudo") e cards fixados na área de trabalho ---- */
+  const [panelTaskId, setPanelTaskId] = useState<string | null>(null);
+  const canPin = typeof window !== 'undefined' && !!window.tudu?.sticky;
+  function openPanel(task: Task) { setPanelTaskId(task.id); }
+  function pinTask(task: Task) {
+    window.tudu?.sticky?.open(task.id);
+    showToast('Card fixado na área de trabalho.');
+  }
+
+  // Um card fixado gravou algo: a lista em memória precisa acompanhar.
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const ch = new BroadcastChannel('tudu-tasks');
+    ch.onmessage = () => { loadTasks(); };
+    return () => ch.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // O card pediu "abrir no TuDu": mostra a tarefa no painel lateral.
+  useEffect(() => window.tudu?.sticky?.onShowTask((id) => setPanelTaskId(id)), []);
 
   function handleViewTask(task: Task) {
     setDetailFocusComments(false);
@@ -1339,6 +1362,7 @@ export default function App() {
                   onToggleTask={handleToggleTask}
                   onToggleSubtask={handleToggleSubtask}
                   onClickTask={handleEditTask}
+                  onExpandTask={openPanel}
                   onToggleNotifications={handleToggleNotifications}
                   onContextTask={openTaskMenu}
                   onArchiveCompleted={requestArchiveCompleted}
@@ -1402,6 +1426,7 @@ export default function App() {
                 onSaveTemplate={() => handleSaveProjectTemplate(activeProjectId)}
                 onToggleTask={handleToggleTask}
                 onClickTask={handleEditTask}
+                onExpandTask={openPanel}
                 onToggleNotifications={handleToggleNotifications}
                 onContextTask={openTaskMenu}
                 onArchiveCompleted={requestArchiveCompleted}
@@ -1833,7 +1858,7 @@ export default function App() {
                             <button type="button" onClick={() => toggleSubtask(sub.id)} className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${sub.done ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-500 hover:border-indigo-500'}`}>
                               {sub.done && <Check size={10} strokeWidth={4} />}
                             </button>
-                            <span className={`flex-1 text-sm ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`}>{sub.title}</span>
+                            <LongWordText text={sub.title} className={`flex-1 text-sm ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`} />
                             <button type="button" onClick={() => removeSubtask(sub.id)} className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-rose-400 transition-all"><X size={14} /></button>
                           </div>
                         );
@@ -1883,7 +1908,35 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         onDataImported={() => { loadTasks(); loadTags(); }}
+        pomo={pomo}
       />
+
+      {(() => {
+        const t = panelTaskId ? tasks.find(x => x.id === panelTaskId && !x.deleted) ?? null : null;
+        const cols = columnsFor(projectById(t?.projectId));
+        // ↑↓ andam pela mesma coluna, na ordem do board.
+        const colOf = (x: Task) => x.status || (x.completed ? doneColumnId(cols) : cols[0]?.id);
+        const irmas = t ? activeTasks.filter(x => x.projectId === t.projectId && colOf(x) === colOf(t)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) : [];
+        const i = t ? irmas.findIndex(x => x.id === t.id) : -1;
+        return (
+          <TaskSidePanel
+            task={t}
+            columns={cols}
+            assignee={personaById(t?.assigneeId)}
+            project={projectById(t?.projectId)}
+            epic={epicById(t?.epicId)}
+            hasPrev={i > 0}
+            hasNext={i >= 0 && i < irmas.length - 1}
+            onNavigate={(dir) => { const n = irmas[i + dir]; if (n) setPanelTaskId(n.id); }}
+            onClose={() => setPanelTaskId(null)}
+            onMoveTo={(task, colId) => handleReorder(task.id, colId, null, colId === doneColumnId(cols))}
+            onToggleSubtask={handleToggleSubtask}
+            onToggleComplete={handleToggleTask}
+            onEdit={handleEditTask}
+            onPin={canPin ? pinTask : undefined}
+          />
+        );
+      })()}
 
       <TaskDetailModal
         isOpen={!!detailTask}
@@ -1971,6 +2024,8 @@ export default function App() {
         state={taskMenu}
         onClose={() => setTaskMenu(null)}
         onView={handleViewTask}
+        onExpand={openPanel}
+        onPin={canPin ? pinTask : undefined}
         onEdit={handleEditTask}
         onToggleComplete={handleToggleTask}
         onToggleNotifications={handleToggleNotifications}

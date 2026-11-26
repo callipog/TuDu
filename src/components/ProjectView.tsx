@@ -19,6 +19,7 @@ interface ProjectViewProps {
   onToggleTask: (task: Task) => void;
   onToggleSubtask?: (task: Task, subtaskId: string) => void;
   onClickTask: (task: Task) => void;
+  onExpandTask?: (task: Task) => void;
   onToggleNotifications: (task: Task) => void;
   onContextTask?: (e: React.MouseEvent, task: Task) => void;
   onArchiveCompleted: () => void;
@@ -134,6 +135,7 @@ export function ProjectView({ project, epics, tasks, onEditProject, onSaveTempla
             onToggleTask={board.onToggleTask}
             onToggleSubtask={board.onToggleSubtask}
             onClickTask={board.onClickTask}
+            onExpandTask={board.onExpandTask}
             onToggleNotifications={board.onToggleNotifications}
             onContextTask={board.onContextTask}
             onArchiveCompleted={board.onArchiveCompleted}

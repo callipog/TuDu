@@ -1,11 +1,12 @@
+import { LongWordText } from './LongWordText';
 import React, { useState, useRef } from 'react';
-import { Check, Bell, BellOff, Pencil, Repeat, ListChecks, ChevronDown, MessageSquare } from 'lucide-react';
+import { Check, Bell, BellOff, Pencil, Repeat, ListChecks, ChevronDown, MessageSquare, Maximize2 } from 'lucide-react';
 import { Task, SubTask, Persona, Epic } from '../types';
 import { format, parseISO, isPast } from 'date-fns';
 import { tagService } from '../services/tags';
 import { Avatar } from './Avatar';
 
-export function TaskItem({ title, description, urgency, tags, completed, completedAt, commentCount, time, notificationsEnabled, recurrence, subtasks, assignee, epic, projectId, onToggle, onToggleNotifications, onToggleSubtask, onEdit, onClick, onContextMenu }: { key?: React.Key; title: string; description?: string; urgency: Task['urgency']; tags: string[]; completed?: boolean; /** Quando a tarefa foi marcada como finalizada (ISO). */ completedAt?: string; /** Quantos comentários a tarefa tem. */ commentCount?: number; time?: string; notificationsEnabled?: boolean; recurrence?: Task['recurrence']; subtasks?: SubTask[]; assignee?: Persona; epic?: Epic; projectId?: string; onToggle?: () => void; onToggleNotifications?: () => void; onToggleSubtask?: (subtaskId: string) => void; onEdit?: () => void; onClick?: () => void; onContextMenu?: (e: React.MouseEvent) => void }) {
+export function TaskItem({ title, description, urgency, tags, completed, completedAt, commentCount, time, notificationsEnabled, recurrence, subtasks, assignee, epic, projectId, onToggle, onToggleNotifications, onToggleSubtask, onEdit, onExpand, onClick, onContextMenu }: { key?: React.Key; title: string; description?: string; urgency: Task['urgency']; tags: string[]; completed?: boolean; /** Quando a tarefa foi marcada como finalizada (ISO). */ completedAt?: string; /** Quantos comentários a tarefa tem. */ commentCount?: number; time?: string; notificationsEnabled?: boolean; recurrence?: Task['recurrence']; subtasks?: SubTask[]; assignee?: Persona; epic?: Epic; projectId?: string; onToggle?: () => void; onToggleNotifications?: () => void; onToggleSubtask?: (subtaskId: string) => void; onEdit?: () => void; /** Abre a visão completa (painel lateral). */ onExpand?: () => void; onClick?: () => void; onContextMenu?: (e: React.MouseEvent) => void }) {
   const [showSubtasks, setShowSubtasks] = useState(false);
   // Altura medida do checklist: o conteúdo fica sempre montado, então
   // scrollHeight já entrega o valor exato mesmo com o painel fechado.
@@ -64,6 +65,16 @@ export function TaskItem({ title, description, urgency, tags, completed, complet
           </div>
         </div>
         <div className="flex items-center gap-0.5 shrink-0 ml-2">
+          {onExpand && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onExpand(); }}
+              title="Ver tudo da tarefa"
+              aria-label="Ver tudo da tarefa"
+              className="p-1 rounded-md text-zinc-500 hover:text-white hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            >
+              <Maximize2 size={13} />
+            </button>
+          )}
           {onEdit && (
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(); }}
@@ -179,9 +190,7 @@ export function TaskItem({ title, description, urgency, tags, completed, complet
                   }`}>
                     {sub.done && <Check size={9} strokeWidth={4} />}
                   </span>
-                  <span className={`text-xs break-words ${sub.done ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>
-                    {sub.title}
-                  </span>
+                  <LongWordText text={sub.title} className={`flex-1 text-xs ${sub.done ? 'line-through text-zinc-500' : 'text-zinc-200'}`} />
                 </button>
               ))}
             </div>

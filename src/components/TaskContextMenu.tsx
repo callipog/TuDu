@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Task } from '../types';
-import { Pencil, Eye, Check, RotateCcw, Bell, BellOff, Trash2, Plus, ListChecks, MessageSquare, FileStack, Archive } from 'lucide-react';
+import { Pencil, Eye, Maximize2, Pin, Check, RotateCcw, Bell, BellOff, Trash2, Plus, ListChecks, MessageSquare, FileStack, Archive } from 'lucide-react';
 
 /** Teto do campo de subtarefa: ~5 linhas. Passou disso, rola por dentro. */
 const MAX_ALTURA_CAMPO = 104;
@@ -15,6 +15,10 @@ interface TaskContextMenuProps {
   state: TaskMenuState | null;
   onClose: () => void;
   onView: (task: Task) => void;
+  /** Painel lateral com tudo da tarefa. */
+  onExpand?: (task: Task) => void;
+  /** Fixar na área de trabalho (só no app desktop). */
+  onPin?: (task: Task) => void;
   onEdit: (task: Task) => void;
   onToggleComplete: (task: Task) => void;
   onToggleNotifications: (task: Task) => void;
@@ -29,7 +33,7 @@ interface TaskContextMenuProps {
   onArchive: (task: Task) => void;
 }
 
-export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComplete, onToggleNotifications, onDelete, onAddSubtask, onComment, onSaveTemplate, onArchive }: TaskContextMenuProps) {
+export function TaskContextMenu({ state, onClose, onView, onExpand, onPin, onEdit, onToggleComplete, onToggleNotifications, onDelete, onAddSubtask, onComment, onSaveTemplate, onArchive }: TaskContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -171,7 +175,9 @@ export function TaskContextMenu({ state, onClose, onView, onEdit, onToggleComple
       </div>
       <div className="my-1 border-t border-white/5" />
 
+      {onExpand && <button className={item} onClick={run(onExpand)}><Maximize2 size={15} className="text-zinc-500" /> Ver tudo</button>}
       <button className={item} onClick={run(onView)}><Eye size={15} className="text-zinc-500" /> Ver detalhes</button>
+      {onPin && !task.completed && <button className={item} onClick={run(onPin)}><Pin size={15} className="text-zinc-500" /> Fixar na área de trabalho</button>}
       <button className={item} onClick={run(onEdit)}><Pencil size={15} className="text-zinc-500" /> Editar</button>
       <button className={item} onClick={run(onToggleComplete)}>
         {task.completed

@@ -1,3 +1,4 @@
+import { LongWordText } from './LongWordText';
 import React, { useEffect, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { Task, Persona, Project, Epic } from '../types';
@@ -234,7 +235,7 @@ export function TaskDetailModal({ isOpen, task, onClose, onEdit, assignee, proje
                   </span>
                 );
                 const texto = (
-                  <span className={`text-sm text-left break-words ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`}>{sub.title}</span>
+                  <LongWordText text={sub.title} className={`flex-1 text-sm text-left ${sub.done ? 'line-through text-zinc-500' : 'text-white'}`} />
                 );
                 // Sem handler (ex.: detalhe só de leitura) segue como estava.
                 if (!onToggleSubtask) {
