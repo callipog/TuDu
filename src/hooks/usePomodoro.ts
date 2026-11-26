@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { notificationService } from '../services/notifications';
-import { playCue } from '../services/sounds';
+import { playCue, playEndSound, EndSound, END_SOUNDS } from '../services/sounds';
 
 export type PomodoroKind = 'pomodoro' | 'stopwatch';
 export type PomodoroMode = 'work' | 'break';
@@ -11,11 +11,26 @@ const TICK_MS = 250;
 interface Prefs {
   workMinutes: number;
   breakMinutes: number;
+  /** Pausa longa, que entra no lugar da curta a cada `longEvery` focos. */
+  longBreakMinutes: number;
+  /** De quantos em quantos focos vem a pausa longa. 0 desliga. */
+  longEvery: number;
   autoCycle: boolean;
   soundOn: boolean;
+  /** Som tocado quando um bloco de foco fecha. */
+  endSound: EndSound;
 }
 
-const DEFAULT_PREFS: Prefs = { workMinutes: 25, breakMinutes: 5, autoCycle: false, soundOn: true };
+const DEFAULT_PREFS: Prefs = {
+  workMinutes: 25, breakMinutes: 5, longBreakMinutes: 15, longEvery: 4,
+  autoCycle: false, soundOn: true, endSound: 'acorde',
+};
+
+function clampEvery(v: unknown): number {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_PREFS.longEvery;
+  return Math.min(n, 12);
+}
 
 function loadPrefs(): Prefs {
   try {
@@ -25,8 +40,11 @@ function loadPrefs(): Prefs {
       return {
         workMinutes: clampMinutes(p.workMinutes, 25),
         breakMinutes: clampMinutes(p.breakMinutes, 5),
+        longBreakMinutes: clampMinutes(p.longBreakMinutes, 15),
+        longEvery: p.longEvery === undefined ? DEFAULT_PREFS.longEvery : clampEvery(p.longEvery),
         autoCycle: !!p.autoCycle,
         soundOn: p.soundOn !== false,
+        endSound: END_SOUNDS.includes(p.endSound) ? p.endSound : DEFAULT_PREFS.endSound,
       };
     }
   } catch { /* ignore */ }
@@ -62,6 +80,8 @@ export function usePomodoro({ onLogTime }: Options = {}) {
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [kind, setKindState] = useState<PomodoroKind>('pomodoro');
   const [mode, setModeState] = useState<PomodoroMode>('work');
+  /** A pausa atual é a longa? Só vale com `mode === 'break'`. */
+  const [longBreak, setLongBreak] = useState(false);
   const [running, setRunning] = useState(false);
   const [cycles, setCycles] = useState(0);
   const [focusId, setFocusId] = useState<string>('');
@@ -77,7 +97,9 @@ export function usePomodoro({ onLogTime }: Options = {}) {
   // Força re-render a cada tick sem guardar o relógio em estado.
   const [, setNow] = useState(0);
 
-  const totalMs = (mode === 'work' ? prefs.workMinutes : prefs.breakMinutes) * 60_000;
+  const minutesFor = (m: PomodoroMode, long: boolean) =>
+    m === 'work' ? prefs.workMinutes : long ? prefs.longBreakMinutes : prefs.breakMinutes;
+  const totalMs = minutesFor(mode, longBreak) * 60_000;
 
   useEffect(() => {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
@@ -169,25 +191,35 @@ export function usePomodoro({ onLogTime }: Options = {}) {
     endsAtRef.current = null;
     startedAtRef.current = null;
     setAccumMs(0);
-    setLeftMs((mode === 'work' ? prefs.workMinutes : prefs.breakMinutes) * 60_000);
-  }, [mode, prefs.workMinutes, prefs.breakMinutes]);
+    setLeftMs(minutesFor(mode, longBreak) * 60_000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, longBreak, prefs]);
 
-  const setMode = useCallback((m: PomodoroMode) => {
+  /** Troca manual de modo. `long` escolhe a pausa longa. */
+  const setMode = useCallback((m: PomodoroMode, long = false) => {
+    const isLong = m === 'break' && long;
     setModeState(m);
+    setLongBreak(isLong);
     setRunning(false);
     endsAtRef.current = null;
-    setLeftMs((m === 'work' ? prefs.workMinutes : prefs.breakMinutes) * 60_000);
-  }, [prefs.workMinutes, prefs.breakMinutes]);
+    setLeftMs(minutesFor(m, isLong) * 60_000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefs]);
 
-  const setMinutes = useCallback((alvo: PomodoroMode, min: number) => {
-    const v = clampMinutes(min, alvo === 'work' ? 25 : 5);
-    setPrefs(p => ({ ...p, [alvo === 'work' ? 'workMinutes' : 'breakMinutes']: v }));
+  const setMinutes = useCallback((alvo: PomodoroMode | 'long', min: number) => {
+    const key = alvo === 'work' ? 'workMinutes' : alvo === 'long' ? 'longBreakMinutes' : 'breakMinutes';
+    const v = clampMinutes(min, DEFAULT_PREFS[key]);
+    setPrefs(p => ({ ...p, [key]: v }));
     // Ajustar a duração do bloco atual só faz sentido com ele parado e intocado.
-    if (!running && alvo === mode) {
+    const atual = mode === 'work' ? 'work' : longBreak ? 'long' : 'break';
+    if (!running && alvo === atual) {
       endsAtRef.current = null;
       setLeftMs(v * 60_000);
     }
-  }, [running, mode]);
+  }, [running, mode, longBreak]);
+
+  const setLongEvery = useCallback((v: number) => setPrefs(p => ({ ...p, longEvery: clampEvery(v) })), []);
+  const setEndSound = useCallback((v: EndSound) => setPrefs(p => ({ ...p, endSound: v })), []);
 
   /** Fecha o bloco atual agora (dispara a virada normal, com som e aviso). */
   const skip = useCallback(() => {
@@ -221,6 +253,8 @@ export function usePomodoro({ onLogTime }: Options = {}) {
     viradaRef.current = true;
 
     const eraTrabalho = mode === 'work';
+    // A pausa longa entra a cada `longEvery` focos fechados (contando este).
+    const proximaLonga = eraTrabalho && prefs.longEvery > 0 && (cycles + 1) % prefs.longEvery === 0;
     if (eraTrabalho) {
       setCycles(c => c + 1);
       if (focusId) logRef.current?.(focusId, prefs.workMinutes);
@@ -229,14 +263,20 @@ export function usePomodoro({ onLogTime }: Options = {}) {
     notificationService.notify(
       'Foco · TuDu',
       eraTrabalho
-        ? `Bloco de ${prefs.workMinutes} min concluído. Pausa de ${prefs.breakMinutes} min.`
+        ? proximaLonga
+          ? `Bloco de ${prefs.workMinutes} min concluído. Pausa longa de ${prefs.longBreakMinutes} min.`
+          : `Bloco de ${prefs.workMinutes} min concluído. Pausa de ${prefs.breakMinutes} min.`
         : 'Pausa encerrada. Hora de voltar ao foco.'
     );
-    cue(eraTrabalho ? 'finish' : 'start');
+    if (prefs.soundOn) {
+      if (eraTrabalho) playEndSound(prefs.endSound);
+      else playCue('start');
+    }
 
     const proximo: PomodoroMode = eraTrabalho ? 'break' : 'work';
-    const proximoMs = (proximo === 'work' ? prefs.workMinutes : prefs.breakMinutes) * 60_000;
+    const proximoMs = minutesFor(proximo, proximaLonga) * 60_000;
     setModeState(proximo);
+    setLongBreak(proximaLonga);
     setLeftMs(proximoMs);
 
     if (prefs.autoCycle && running) {
@@ -247,17 +287,23 @@ export function usePomodoro({ onLogTime }: Options = {}) {
       endsAtRef.current = null;
       setRunning(false);
     }
-  }, [running, kind, rawLeftMs, mode, focusId, prefs, cue]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, kind, rawLeftMs, mode, focusId, prefs, cycles]);
 
   return {
-    kind, mode, running, cycles, focusId, active,
+    kind, mode, longBreak, running, cycles, focusId, active,
     workMinutes: prefs.workMinutes,
     breakMinutes: prefs.breakMinutes,
+    longBreakMinutes: prefs.longBreakMinutes,
+    longEvery: prefs.longEvery,
     autoCycle: prefs.autoCycle,
     soundOn: prefs.soundOn,
+    endSound: prefs.endSound,
+    /** Minutos do bloco atual (foco, pausa curta ou longa). */
+    currentMinutes: minutesFor(mode, longBreak),
     leftSeconds, elapsedSeconds, progress,
     start, pause, toggle, reset, skip, finish,
-    setKind, setMode, setMinutes, setFocusId, setAutoCycle, setSoundOn,
+    setKind, setMode, setMinutes, setFocusId, setAutoCycle, setSoundOn, setLongEvery, setEndSound,
   };
 }
 

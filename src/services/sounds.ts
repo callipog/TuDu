@@ -7,7 +7,14 @@
  * notificações de celular, não um alarme.
  */
 
-export type Cue = 'start' | 'pause' | 'finish';
+export type Cue = 'start' | 'pause' | 'finish' | 'sino' | 'gota' | 'digital';
+
+/** Opções de som do fim do foco. `acorde` é o `finish` de sempre. */
+export type EndSound = 'acorde' | 'sino' | 'gota' | 'digital' | 'nenhum';
+export const END_SOUNDS: EndSound[] = ['acorde', 'sino', 'gota', 'digital', 'nenhum'];
+export const END_SOUND_LABEL: Record<EndSound, string> = {
+  acorde: 'Acorde', sino: 'Sino', gota: 'Gota', digital: 'Digital', nenhum: 'Sem som',
+};
 
 let ctx: AudioContext | null = null;
 
@@ -24,13 +31,13 @@ function getCtx(): AudioContext | null {
   return ctx;
 }
 
-/** Uma nota senoidal com envelope suave — sem clique no ataque nem no corte. */
-function nota(ac: AudioContext, freq: number, atraso: number, duracao: number, volume: number) {
+/** Uma nota com envelope suave — sem clique no ataque nem no corte. */
+function nota(ac: AudioContext, freq: number, atraso: number, duracao: number, volume: number, tipo: OscillatorType = 'sine') {
   const t0 = ac.currentTime + atraso;
   const osc = ac.createOscillator();
   const gain = ac.createGain();
 
-  osc.type = 'sine';
+  osc.type = tipo;
   osc.frequency.setValueAtTime(freq, t0);
 
   gain.gain.setValueAtTime(0, t0);
@@ -44,7 +51,7 @@ function nota(ac: AudioContext, freq: number, atraso: number, duracao: number, v
 }
 
 // Notas da escala (Hz): A5, C#6, E6, F#5.
-const CUES: Record<Cue, { freq: number; em: number; dur: number; vol: number }[]> = {
+const CUES: Record<Cue, { freq: number; em: number; dur: number; vol: number; tipo?: OscillatorType }[]> = {
   // Subindo: "começou".
   start: [
     { freq: 880.0, em: 0, dur: 0.13, vol: 0.16 },
@@ -60,12 +67,35 @@ const CUES: Record<Cue, { freq: number; em: number; dur: number; vol: number }[]
     { freq: 1108.7, em: 0.13, dur: 0.16, vol: 0.15 },
     { freq: 1318.5, em: 0.26, dur: 0.34, vol: 0.15 },
   ],
+  // Sino: a fundamental com um harmônico, soando por mais tempo.
+  sino: [
+    { freq: 1046.5, em: 0, dur: 1.4, vol: 0.16 },
+    { freq: 2093.0, em: 0, dur: 0.9, vol: 0.05 },
+    { freq: 1046.5, em: 0.55, dur: 1.2, vol: 0.12 },
+  ],
+  // Gota: duas notas curtas descendo, bem discreto.
+  gota: [
+    { freq: 1568.0, em: 0, dur: 0.12, vol: 0.14 },
+    { freq: 1174.7, em: 0.09, dur: 0.22, vol: 0.12 },
+  ],
+  // Digital: três bipes iguais, de relógio.
+  digital: [
+    { freq: 1760, em: 0, dur: 0.08, vol: 0.05, tipo: 'square' },
+    { freq: 1760, em: 0.16, dur: 0.08, vol: 0.05, tipo: 'square' },
+    { freq: 1760, em: 0.32, dur: 0.08, vol: 0.05, tipo: 'square' },
+  ],
 };
+
+/** Som do fim do foco (`acorde` = o `finish` de sempre). */
+export function playEndSound(s: EndSound) {
+  if (s === 'nenhum') return;
+  playCue(s === 'acorde' ? 'finish' : s);
+}
 
 export function playCue(cue: Cue) {
   const ac = getCtx();
   if (!ac) return;
   try {
-    for (const n of CUES[cue]) nota(ac, n.freq, n.em, n.dur, n.vol);
+    for (const n of CUES[cue]) nota(ac, n.freq, n.em, n.dur, n.vol, n.tipo);
   } catch { /* som nunca deve derrubar o timer */ }
 }

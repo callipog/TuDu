@@ -26,6 +26,8 @@ export interface IslandSnapshot {
     running: boolean;
     kind: 'pomodoro' | 'stopwatch';
     mode: 'work' | 'break';
+    /** A pausa em andamento é a longa. */
+    long: boolean;
     /** Fim do bloco, para a ilha contar sozinha sem receber um tick por segundo. */
     endsAt: number | null;
     /** Quanto sobra do bloco (vale quando pausado). */
@@ -51,6 +53,8 @@ export interface FocusInput {
   elapsedSeconds: number;
   workMinutes: number;
   breakMinutes: number;
+  longBreak?: boolean;
+  longBreakMinutes?: number;
   focusId: string;
   cycles: number;
 }
@@ -113,13 +117,16 @@ export function buildIslandSnapshot(input: {
   const f = input.focus;
   if (f && (f.active || f.running)) {
     const task = f.focusId ? byId.get(f.focusId) : undefined;
+    const long = f.mode === 'break' && !!f.longBreak;
+    const breakMin = long ? (f.longBreakMinutes ?? f.breakMinutes) : f.breakMinutes;
     focus = {
       running: f.running,
       kind: f.kind,
       mode: f.mode,
+      long,
       endsAt: f.running && f.kind === 'pomodoro' ? now + Math.max(0, f.leftSeconds) * 1000 : null,
       leftMs: f.kind === 'pomodoro' ? Math.max(0, f.leftSeconds) * 1000 : 0,
-      totalMs: f.kind === 'pomodoro' ? (f.mode === 'work' ? f.workMinutes : f.breakMinutes) * 60_000 : 0,
+      totalMs: f.kind === 'pomodoro' ? (f.mode === 'work' ? f.workMinutes : breakMin) * 60_000 : 0,
       startedAt: f.running && f.kind === 'stopwatch' ? now - Math.max(0, f.elapsedSeconds) * 1000 : null,
       taskTitle: task ? task.title : '',
       cycles: f.cycles,

@@ -51,7 +51,7 @@ export function PomodoroBar({ pomo, onOpen }: PomodoroBarProps) {
           {fmt(tempo)}
         </span>
         <span className={`hidden xl:inline text-[10px] font-semibold uppercase tracking-wider ${pausa ? 'text-emerald-400/70' : 'text-indigo-400/70'}`}>
-          {pomo.kind === 'stopwatch' ? 'Cronômetro' : pausa ? 'Pausa' : 'Foco'}
+          {pomo.kind === 'stopwatch' ? 'Cronômetro' : pausa ? (pomo.longBreak ? 'Pausa longa' : 'Pausa') : 'Foco'}
         </span>
       </button>
 

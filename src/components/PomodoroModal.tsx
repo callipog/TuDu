@@ -25,6 +25,8 @@ const urgencyDot: Record<Urgency, string> = {
 };
 
 const WORK_PRESETS = [15, 25, 45, 50];
+/** Opções do "pausa longa a cada N focos". 0 desliga. */
+export const LONG_EVERY_OPTIONS = [0, 2, 3, 4, 5, 6];
 
 function fmt(total: number) {
   const m = Math.floor(total / 60).toString().padStart(2, '0');
@@ -153,7 +155,7 @@ export function PomodoroModal({ isOpen, onClose, pomo, tasks, projectName }: Pom
     ? cronometro
       ? 'Contando. Use "Concluir" para parar e apontar o tempo na tarefa.'
       : pausa
-        ? 'Pausa em andamento.'
+        ? pomo.longBreak ? 'Pausa longa em andamento — levante, alongue, beba água.' : 'Pausa em andamento.'
         : 'Você pode fechar esta janela — o timer continua na barrinha do topo do app.'
     : pomo.active
       ? 'Pausado. Retome, ou conclua para apontar o que já foi trabalhado.'
@@ -188,7 +190,7 @@ export function PomodoroModal({ isOpen, onClose, pomo, tasks, projectName }: Pom
                 {fmt(tempo)}
               </span>
               <span className="text-[11px] text-zinc-500 mt-1.5">
-                {cronometro ? 'Tempo corrido' : pausa ? 'Pausa' : `Foco · bloco ${pomo.cycles + 1}`}
+                {cronometro ? 'Tempo corrido' : pausa ? (pomo.longBreak ? 'Pausa longa' : 'Pausa') : `Foco · bloco ${pomo.cycles + 1}`}
               </span>
             </div>
           </div>
@@ -365,14 +367,15 @@ export function PomodoroModal({ isOpen, onClose, pomo, tasks, projectName }: Pom
             {!cronometro && (
               <div className="flex bg-white/5 border border-white/10 rounded-lg p-0.5">
                 {([
-                  { id: 'work' as PomodoroMode, label: 'Foco' },
-                  { id: 'break' as PomodoroMode, label: 'Pausa' },
+                  { id: 'work' as PomodoroMode, long: false, label: 'Foco' },
+                  { id: 'break' as PomodoroMode, long: false, label: 'Pausa' },
+                  { id: 'break' as PomodoroMode, long: true, label: 'Pausa longa' },
                 ]).map(m => (
                   <button
-                    key={m.id}
-                    onClick={() => pomo.setMode(m.id)}
+                    key={m.label}
+                    onClick={() => pomo.setMode(m.id, m.long)}
                     className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                      pomo.mode === m.id
+                      pomo.mode === m.id && (m.id === 'work' || pomo.longBreak === m.long)
                         ? m.id === 'work' ? 'bg-indigo-600 text-white' : 'bg-emerald-600 text-white'
                         : 'text-zinc-400 hover:text-white'
                     }`}
@@ -439,6 +442,21 @@ export function PomodoroModal({ isOpen, onClose, pomo, tasks, projectName }: Pom
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-zinc-500">Pausa</span>
                 <Stepper valor={pomo.breakMinutes} onChange={(v) => pomo.setMinutes('break', v)} rotulo="pausa" />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-zinc-500">Longa</span>
+                <Stepper valor={pomo.longBreakMinutes} onChange={(v) => pomo.setMinutes('long', v)} rotulo="pausa longa" />
+                <select
+                  value={pomo.longEvery}
+                  onChange={(e) => pomo.setLongEvery(Number(e.target.value))}
+                  title="De quantos em quantos focos vem a pausa longa"
+                  className="bg-[#18181b] border border-white/10 rounded-lg px-2 py-1.5 text-[11px] text-zinc-300 focus:outline-none focus:border-indigo-500"
+                >
+                  {LONG_EVERY_OPTIONS.map(n => (
+                    <option key={n} value={n}>{n === 0 ? 'nunca' : `a cada ${n} focos`}</option>
+                  ))}
+                </select>
               </div>
 
               <span className="text-[10px] text-zinc-600">
