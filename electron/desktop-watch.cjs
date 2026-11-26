@@ -1,20 +1,16 @@
 'use strict';
 /*
- * Vigia da área de trabalho: um PowerShell filho (desktop-helper.ps1) que deixa
- * a ilha por cima enquanto a área de trabalho estiver em primeiro plano — o
- * Win+D não minimiza as janelas, ele põe a área de trabalho na frente delas, e
- * a ilha ficava escondida atrás.
+ * Vigia da área de trabalho: o helper nativo (native-helper.cjs, modo
+ * "desktop") deixa a ilha por cima enquanto a área de trabalho estiver em
+ * primeiro plano — o Win+D não minimiza as janelas, ele põe a área de trabalho
+ * na frente delas, e a ilha ficava escondida atrás.
  *
- * Mesma receita do player: script por -EncodedCommand (o PowerShell não lê
- * dentro do app.asar) e, se algo falhar, a ilha só perde este truque.
+ * Se algo falhar, a ilha só perde este truque.
  */
 
-const fs = require('fs');
-const path = require('path');
-const { spawn } = require('child_process');
-const { parseLine } = require('./media.cjs');
+const { spawnHelper, parseLine } = require('./native-helper.cjs');
 
-/** HWND da janela, como número decimal que o PowerShell entende. */
+/** HWND da janela, como número decimal. */
 function hwndOf(win) {
   const buf = win.getNativeWindowHandle();
   return buf.length >= 8 ? buf.readBigUInt64LE(0).toString() : String(buf.readUInt32LE(0));
@@ -36,23 +32,13 @@ function createDesktopWatch({ onChange, log = console } = {}) {
 
   function start() {
     if (!available || child) return;
-    let script;
     try {
-      script = fs.readFileSync(path.join(__dirname, 'desktop-helper.ps1'), 'utf-8');
+      child = spawnHelper('desktop');
     } catch (err) {
-      log.error('desktop: script ausente', err);
-      available = false;
-      return;
-    }
-    const encoded = Buffer.from(script, 'utf16le').toString('base64');
-    try {
-      child = spawn('powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-        { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
-    } catch (err) {
-      log.error('desktop: não deu para abrir o PowerShell', err);
-      available = false;
+      log.error('desktop: não deu para abrir o helper', err && err.message);
       child = null;
+      // O antivírus às vezes segura o .exe um instante: tenta de novo, poucas vezes.
+      if (target && restarts < 3) { restarts++; setTimeout(() => { if (target) start(); }, 2000); }
       return;
     }
     send(`pid ${process.pid}`);
@@ -74,7 +60,7 @@ function createDesktopWatch({ onChange, log = console } = {}) {
         }
       }
     });
-    child.on('error', err => { log.warn('desktop: PowerShell falhou', err && err.message); available = false; });
+    child.on('error', err => log.warn('desktop: helper falhou', err && err.message));
     const me = child;
     child.on('exit', () => {
       if (child !== me) return;   // parado de propósito, ou já trocado por outro

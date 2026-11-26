@@ -1,0 +1,38 @@
+[package]
+name = "tudu-helper"
+version = "1.0.0"
+edition = "2021"
+description = "Ponte nativa do TuDu com o Windows: midia (SMTC), area de trabalho e indicadores."
+publish = false
+
+[dependencies]
+serde_json = "1"
+base64 = "0.22"
+
+[dependencies.windows]
+version = "0.62"
+features = [
+  "Foundation",
+  "Media_Control",
+  "Storage_Streams",
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Ole",
+  "Win32_System_Power",
+  "Win32_System_Rpc",
+  "Win32_System_Variant",
+  "Win32_System_Wmi",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
+]
+
+# Binario pequeno: ele vai junto no instalador e fica aberto o tempo todo.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

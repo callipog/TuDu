@@ -5,6 +5,7 @@ mcp-tudu/
 build/
 dist/
 dist-electron/
+native/*/target/
 coverage/
 .DS_Store
 *.log

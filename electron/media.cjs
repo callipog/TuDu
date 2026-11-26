@@ -1,33 +1,16 @@
 'use strict';
 /*
- * Player da ilha: conversa com o controle de mídia do Windows (SMTC) por meio
- * de um PowerShell filho (media-helper.ps1). Sem módulo nativo para compilar.
+ * Player da ilha: conversa com o controle de mídia do Windows (SMTC) pelo
+ * helper nativo (native-helper.cjs, modo "media").
  *
- * O script vai por -EncodedCommand, não por -File: no app empacotado ele mora
- * dentro do app.asar, que o Node lê mas o PowerShell não enxerga.
- *
- * Se o PowerShell faltar ou o WinRT recusar, o player simplesmente não existe
+ * Se o helper faltar ou o WinRT recusar, o player simplesmente não existe
  * — a ilha segue funcionando sem ele.
  */
 
-const fs = require('fs');
-const path = require('path');
-const { spawn } = require('child_process');
+const { spawnHelper, parseLine } = require('./native-helper.cjs');
 
 const MAX_RESTARTS = 3;
 const RESTART_WINDOW_MS = 60_000;
-
-/** Lê o que o helper escreve: uma linha JSON por evento. Puro, para testar. */
-function parseLine(line) {
-  const s = String(line || '').trim();
-  if (!s || s[0] !== '{') return null;
-  try {
-    const msg = JSON.parse(s);
-    return msg && typeof msg === 'object' && typeof msg.t === 'string' ? msg : null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Funde um evento no estado do player. Devolve o estado novo, ou o mesmo
@@ -98,23 +81,12 @@ function createMediaBridge({ onChange, log = console } = {}) {
   function start() {
     wanted = true;
     if (!available || child) return;
-    let script;
     try {
-      script = fs.readFileSync(path.join(__dirname, 'media-helper.ps1'), 'utf-8');
+      child = spawnHelper('media');
     } catch (err) {
-      log.error('media: script ausente', err);
-      available = false;
-      return;
-    }
-    const encoded = Buffer.from(script, 'utf16le').toString('base64');
-    try {
-      child = spawn('powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-        { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
-    } catch (err) {
-      log.error('media: não deu para abrir o PowerShell', err);
-      available = false;
+      log.error('media: não deu para abrir o helper', err && err.message);
       child = null;
+      retry();
       return;
     }
 
@@ -134,25 +106,26 @@ function createMediaBridge({ onChange, log = console } = {}) {
         emit(applyMessage(state, msg, Date.now()));
       }
     });
-    child.on('error', err => {
-      log.warn('media: PowerShell falhou', err && err.message);
-      available = false;
-    });
+    child.on('error', err => log.warn('media: helper falhou', err && err.message));
     child.on('exit', () => {
       child = null;
       buffer = '';
       emit(null);
-      if (!wanted || !available) return;
-      // Caiu sozinho: tenta de novo, mas não em laço.
-      const now = Date.now();
-      while (restarts.length && now - restarts[0] > RESTART_WINDOW_MS) restarts.shift();
-      if (restarts.length >= MAX_RESTARTS) {
-        log.warn('media: desisti depois de várias quedas seguidas');
-        return;
-      }
-      restarts.push(now);
-      setTimeout(() => { if (wanted) start(); }, 2000);
+      retry();
     });
+  }
+
+  /** Caiu (ou nem abriu — o antivírus às vezes segura o .exe um instante): tenta de novo, mas não em laço. */
+  function retry() {
+    if (!wanted || !available) return;
+    const now = Date.now();
+    while (restarts.length && now - restarts[0] > RESTART_WINDOW_MS) restarts.shift();
+    if (restarts.length >= MAX_RESTARTS) {
+      log.warn('media: desisti depois de várias quedas seguidas');
+      return;
+    }
+    restarts.push(now);
+    setTimeout(() => { if (wanted) start(); }, 2000);
   }
 
   function stop() {
