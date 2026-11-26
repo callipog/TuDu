@@ -16,7 +16,7 @@
     "clean": "rm -rf dist dist-electron",
     "lint": "tsc --noEmit",
     "test": "node --test \"electron/**/*.test.cjs\" \"src/**/*.test.ts\"",
-    "build:native": "node scripts/cargo-sac.cjs cargo build --release --manifest-path native/tudu-helper/Cargo.toml",
+    "build:native": "node scripts/build-native.cjs",
     "electron:start": "npm run build:native && cross-env NODE_ENV=development electron .",
     "electron:dev": "concurrently -k \"npm run dev\" \"wait-on tcp:3000 && npm run electron:start\"",
     "electron:build": "npm run build:native && npm run build && electron-builder"

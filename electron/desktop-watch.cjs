@@ -20,6 +20,8 @@ function createDesktopWatch({ onChange, log = console } = {}) {
   let child = null;
   let available = process.platform === 'win32';
   let target = null;
+  /** Cards fixados que não ficam sempre por cima: sobem junto no Win+D. */
+  let extras = [];
   let auto = true;
   let onDesktop = false;
   let buffer = '';
@@ -38,12 +40,13 @@ function createDesktopWatch({ onChange, log = console } = {}) {
       log.error('desktop: não deu para abrir o helper', err && err.message);
       child = null;
       // O antivírus às vezes segura o .exe um instante: tenta de novo, poucas vezes.
-      if (target && restarts < 3) { restarts++; setTimeout(() => { if (target) start(); }, 2000); }
+      if (wanted() && restarts < 3) { restarts++; setTimeout(() => { if (wanted()) start(); }, 2000); }
       return;
     }
     send(`pid ${process.pid}`);
     send(`auto ${auto ? 1 : 0}`);
     if (target) send(`hwnd ${target}`);
+    send(`extra ${extras.join(',')}`);
 
     child.stdout.setEncoding('utf-8');
     child.stdout.on('data', chunk => {
@@ -67,18 +70,29 @@ function createDesktopWatch({ onChange, log = console } = {}) {
       child = null;
       buffer = '';
       onDesktop = false;
-      if (!available || !target || restarts >= 3) return;
+      if (!available || !wanted() || restarts >= 3) return;
       restarts++;
-      setTimeout(() => { if (target) start(); }, 2000);
+      setTimeout(() => { if (wanted()) start(); }, 2000);
     });
   }
 
-  /** Aponta para a janela da ilha (ou null para parar). */
+  /** O vigia só roda enquanto houver ilha ou card para cuidar. */
+  function wanted() { return !!target || extras.length > 0; }
+
+  /** Aponta para a janela da ilha (ou null). */
   function setTarget(win) {
-    if (!win) { target = null; stop(); return; }
-    target = hwndOf(win);
+    target = win ? hwndOf(win) : null;
+    if (!wanted()) { stop(); return; }
     start();
-    send(`hwnd ${target}`);
+    send(`hwnd ${target || 0}`);
+  }
+
+  /** Cards fixados que devem subir junto no Win+D (os "sempre por cima" já ficam). */
+  function setExtras(wins) {
+    extras = (wins || []).filter(w => w && !w.isDestroyed()).map(hwndOf);
+    if (!wanted()) { stop(); return; }
+    start();
+    send(`extra ${extras.join(',')}`);
   }
 
   /** false enquanto o TuDu já força a ilha por cima (alfinete, lembrete crítico). */
@@ -98,7 +112,7 @@ function createDesktopWatch({ onChange, log = console } = {}) {
     }
   }
 
-  return { setTarget, setAuto, stop, isOnDesktop: () => onDesktop };
+  return { setTarget, setExtras, setAuto, stop, isOnDesktop: () => onDesktop };
 }
 
 module.exports = { createDesktopWatch };

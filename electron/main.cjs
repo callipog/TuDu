@@ -14,7 +14,7 @@ const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, e
 const { createMediaBridge, forQueue, forIsland } = require('./media.cjs');
 const { createIndicatorsBridge, FLASH_MS } = require('./indicators.cjs');
 const { createDesktopWatch } = require('./desktop-watch.cjs');
-const { askHelper } = require('./native-helper.cjs');
+const { askBattery, nativeProbe } = require('./native-helper.cjs');
 const wellness = require('./wellness.cjs');
 const stickies = require('./stickies.cjs');
 const isDev = process.env.NODE_ENV === 'development';
@@ -292,7 +292,13 @@ function openSticky(taskId, index) {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event) => event.preventDefault());
-  win.once('ready-to-show', () => { if (!win.isDestroyed()) win.showInactive(); });
+  win.once('ready-to-show', () => {
+    if (win.isDestroyed()) return;
+    win.showInactive();
+    syncStickyWatch();
+  });
+  // "Minimizar tudo" também leva o card: ele volta sozinho, sem pegar o foco.
+  win.on('minimize', () => setTimeout(() => { if (!win.isDestroyed() && win.isMinimized()) win.showInactive(); }, 60));
 
   // Lembra onde e de que tamanho a pessoa deixou (recolhido não muda a altura salva).
   const lembrar = () => {
@@ -310,11 +316,24 @@ function openSticky(taskId, index) {
   win.on('closed', () => {
     clearTimeout(stickySaveTimers.get(id));
     if (stickyWindows.get(id) === win) stickyWindows.delete(id);
+    syncStickyWatch();
   });
 
   const query = { sticky: id };
   if (isDev) win.loadURL('http://localhost:3000/?sticky=' + encodeURIComponent(id));
   else win.loadFile(path.join(__dirname, '../dist/index.html'), { query });
+}
+
+/** Win+D: os cards que não estão "sempre por cima" sobem junto com a ilha. */
+function syncStickyWatch() {
+  const salvos = stickyList();
+  const wins = [];
+  for (const [taskId, win] of stickyWindows) {
+    if (win.isDestroyed()) continue;
+    const s = salvos.find(x => x.taskId === taskId);
+    if (!s || !s.onTop) wins.push(win);
+  }
+  desktopWatch.setExtras(wins);
 }
 
 /** Desafixar (pela pessoa): sai da lista. Fechar o app não desafixa nada. */
@@ -332,6 +351,7 @@ function setStickyState(taskId, patch) {
   if (typeof patch.onTop === 'boolean') {
     next.onTop = patch.onTop;
     win.setAlwaysOnTop(patch.onTop, 'floating');
+    setImmediate(syncStickyWatch);   // depois de gravar o estado novo
   }
   if (typeof patch.collapsed === 'boolean' && patch.collapsed !== atual.collapsed) {
     next.collapsed = patch.collapsed;
@@ -691,7 +711,7 @@ function applyIslandZ(force) {
 function detectBattery() {
   if (hasBattery !== null || process.platform !== 'win32') return;
   hasBattery = false;
-  askHelper('battery').then(msg => {
+  askBattery().then(msg => {
     hasBattery = !!(msg && msg.present);
     sendIsland('island:config', publicIslandConfig());
   });
@@ -944,6 +964,12 @@ app.whenReady().then(() => {
   // não pode criar splash/janela, senão sobra um splash órfão na tela.
   if (!gotTheLock) return;
   Menu.setApplicationMenu(null);
+
+  // Helper nativo ou reserva em PowerShell? (o Windows pode barrar o .exe)
+  if (process.platform === 'win32') {
+    const p = nativeProbe();
+    console.log(p.native ? '[helper] nativo' : `[helper] reserva PowerShell (${p.reason})`);
+  }
 
   // Serve os anexos gravados em disco — e nada além deles.
   protocol.handle('tudu-file', (request) => {

@@ -4,7 +4,9 @@
 //! frente de tudo. Enquanto ela estiver em primeiro plano, a ilha fica por
 //! cima; quando outro app volta, a ilha desce para logo abaixo dele, sem roubar
 //! o foco.
-//! Comandos: "hwnd <numero>", "pid <numero>", "auto 1|0".
+//! Comandos: "hwnd <numero>" (a ilha; 0 = nenhuma), "extra <n1,n2,...>" (cards
+//! fixados que nao ficam sempre por cima; vazio = nenhum), "pid <numero>",
+//! "auto 1|0" (vale so para a ilha).
 //! Saida: {"t":"desktop","on":true,"cls":"WorkerW"}.
 
 use crate::io::{emit, sleep_ms, Commands, Poll};
@@ -59,10 +61,15 @@ fn lower(target: HWND, fg: HWND) {
     }
 }
 
+fn parse_hwnd(s: &str) -> HWND {
+    HWND(s.trim().parse::<i64>().unwrap_or(0) as isize as *mut _)
+}
+
 pub fn run() -> i32 {
     emit(&json!({ "t": "ready" }));
     let cmds = Commands::start();
     let mut target = HWND::default();
+    let mut extras: Vec<HWND> = Vec::new();
     let mut own_pid: u32 = 0;
     let mut auto = true;
     let mut on_desktop = false;
@@ -76,7 +83,13 @@ pub fn run() -> i32 {
                     let cmd = parts.next().unwrap_or("");
                     let arg = parts.next().unwrap_or("");
                     match cmd {
-                        "hwnd" => target = HWND(arg.parse::<i64>().unwrap_or(0) as isize as *mut _),
+                        "hwnd" => target = parse_hwnd(arg),
+                        "extra" => {
+                            extras = arg.split(',').map(parse_hwnd).filter(|h| !h.is_invalid()).collect();
+                            if on_desktop {
+                                extras.iter().for_each(|h| raise(*h));
+                            }
+                        }
                         "pid" => own_pid = arg.parse().unwrap_or(0),
                         "auto" => {
                             auto = arg == "1";
@@ -105,13 +118,19 @@ pub fn run() -> i32 {
                     if auto {
                         if desk { raise(target) } else { lower(target, fg) }
                     }
+                    for h in &extras {
+                        if desk { raise(*h) } else { lower(*h, fg) }
+                    }
                     emit(&json!({ "t": "desktop", "on": desk, "cls": cls }));
                 }
             }
         }
         // Enquanto a area de trabalho estiver na frente, reafirma de tempos em tempos.
-        if auto && on_desktop && tick % 5 == 0 {
-            raise(target);
+        if on_desktop && tick % 5 == 0 {
+            if auto {
+                raise(target);
+            }
+            extras.iter().for_each(|h| raise(*h));
         }
 
         tick += 1;

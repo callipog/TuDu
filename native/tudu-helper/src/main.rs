@@ -15,6 +15,13 @@ mod io;
 mod media;
 
 use serde_json::json;
+
+/// Variacao de build (scripts/build-native.cjs): muda o binario quando o
+/// Controle Inteligente de Aplicativos barra uma compilacao. Nao afeta nada.
+const BUILD_SALT: &str = match option_env!("TUDU_BUILD_SALT") {
+    Some(s) => s,
+    None => "",
+};
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 
 fn main() {
@@ -29,7 +36,7 @@ fn main() {
         "indicators" => indicators::run(),
         "battery" => battery::run(),
         _ => {
-            io::emit(&json!({ "t": "error", "message": format!("modo desconhecido: {mode}") }));
+            io::emit(&json!({ "t": "error", "message": format!("modo desconhecido: {mode} {BUILD_SALT}") }));
             2
         }
     };
