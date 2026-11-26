@@ -27,14 +27,18 @@ use windows::Win32::System::Wmi::{
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CAPITAL, VK_NUMLOCK};
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, ShowWindow, SW_MINIMIZE, SW_RESTORE};
 
+/// Quantos ciclos (de 120 ms) o dispositivo guardado vale antes de procurar o
+/// padrao de novo (~2 s): trocar de fone para caixa muda o dispositivo.
+const DEVICE_TTL: u32 = 16;
+
 struct Audio {
     en: Option<IMMDeviceEnumerator>,
+    /// [saida, entrada]: o controle de volume guardado e quantos ciclos ainda vale.
+    cache: [Option<(IAudioEndpointVolume, u32)>; 2],
 }
 
 impl Audio {
-    /// Nivel 0..1 e mudo do dispositivo padrao (lido a cada vez: trocar de
-    /// fone para caixa muda o dispositivo). None quando nao ha dispositivo.
-    fn read(&mut self, capture: bool) -> Option<(f32, bool)> {
+    fn open(&mut self, capture: bool) -> Option<IAudioEndpointVolume> {
         unsafe {
             if self.en.is_none() {
                 self.en = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok();
@@ -45,16 +49,34 @@ impl Audio {
             } else {
                 en.GetDefaultAudioEndpoint(eRender, eMultimedia)
             };
-            let res = dev.and_then(|d| {
-                let v: IAudioEndpointVolume = d.Activate(CLSCTX_ALL, None)?;
-                Ok((v.GetMasterVolumeLevelScalar()?, v.GetMute()?.as_bool()))
-            });
-            match res {
-                Ok(r) => Some(r),
+            match dev.and_then(|d| d.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None)) {
+                Ok(v) => Some(v),
                 Err(_) => {
                     self.en = None;
                     None
                 }
+            }
+        }
+    }
+
+    /// Nivel 0..1 e mudo do dispositivo padrao. None quando nao ha dispositivo.
+    /// O controle fica guardado por ~2 s: abrir o dispositivo a cada leitura
+    /// era o que mais gastava CPU no helper.
+    fn read(&mut self, capture: bool) -> Option<(f32, bool)> {
+        let i = capture as usize;
+        let valido = matches!(&self.cache[i], Some((_, ttl)) if *ttl > 0);
+        if !valido {
+            self.cache[i] = self.open(capture).map(|v| (v, DEVICE_TTL));
+        }
+        let (v, ttl) = self.cache[i].as_mut()?;
+        *ttl -= 1;
+        let r = unsafe { v.GetMasterVolumeLevelScalar().and_then(|l| Ok((l, v.GetMute()?.as_bool()))) };
+        match r {
+            Ok(x) => Some(x),
+            Err(_) => {
+                // Dispositivo sumiu (desplugou o fone): procura de novo na proxima.
+                self.cache[i] = None;
+                None
             }
         }
     }
@@ -162,7 +184,7 @@ fn r2(x: f64) -> f64 {
 pub fn run() -> i32 {
     emit(&json!({ "t": "ready" }));
     let cmds = Commands::start();
-    let mut audio = Audio { en: None };
+    let mut audio = Audio { en: None, cache: [None, None] };
     let mut bri = Brightness { svc: None };
     let has_brightness = bri.read().is_some();
 
