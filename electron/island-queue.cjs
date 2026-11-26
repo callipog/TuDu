@@ -8,7 +8,10 @@
  * testar cada regra com `node --test` e o processo principal só faz a fiação.
  *
  * Ordem (a de cima ganha):
+ *   0. indicador (volume, brilho, teclas, microfone) — 1,6s, no lugar do aviso
+ *      do Windows; é resposta a um gesto da pessoa, então passa na frente
  *   1. lembrete vencido e não resolvido   — fica até ser resolvido
+ *   1b. água / levantar                   — esperam o bloco de foco acabar
  *   2. pulso do player                    — 3s quando a faixa muda; silenciado
  *                                           durante o foco, que existe para não
  *                                           ser interrompido
@@ -21,6 +24,23 @@
  */
 
 const PULSE_MS = 3000;
+const INDICATOR_MS = 1600;
+const INDICATOR_KINDS = ['volume', 'brightness', 'mic', 'caps', 'num'];
+
+/** Indicador ainda valendo, já limpo; null se passou ou não tem forma certa. */
+function liveIndicator(raw, now) {
+  if (!raw || typeof raw !== 'object' || !INDICATOR_KINDS.includes(raw.kind)) return null;
+  const at = finite(raw.at);
+  if (at === null || now < at || now - at >= INDICATOR_MS) return null;
+  const lv = finite(raw.level);
+  return {
+    kind: raw.kind,
+    level: lv === null ? null : Math.max(0, Math.min(1, lv)),
+    muted: raw.muted === true,
+    on: raw.on === true,
+    at,
+  };
+}
 const NEXT_WINDOW_MS = 30 * 60 * 1000;
 const FRESH_MS = 60 * 1000; // até aqui um lembrete é "agora"; depois, o horário
 
@@ -28,9 +48,22 @@ const URGENCIES = ['low', 'medium', 'high', 'critical'];
 const MAX_TEXT = 200;
 const MAX_REMINDERS = 50;
 
-/* Seções na ordem das setas. "hoje" é a base e não desliga. */
-const PAGE_ORDER = ['hoje', 'player', 'foco', 'lembretes', 'captura'];
-const TOGGLEABLE = ['player', 'foco', 'lembretes', 'captura'];
+/* Ordem padrão das setas; a pessoa pode reordenar e desligar qualquer uma
+   (água liga junto com o lembrete de água). Se tudo ficar desligado, "hoje"
+   volta: o painel aberto nunca fica vazio. */
+const PAGE_ORDER = ['hoje', 'player', 'foco', 'lembretes', 'agua', 'captura'];
+const TOGGLEABLE = ['hoje', 'player', 'foco', 'lembretes', 'captura'];
+
+/** Ordem pedida, sem repetição nem desconhecidas; o que faltar entra no fim. */
+function normalizeOrder(order) {
+  const seen = new Set();
+  const out = [];
+  for (const k of Array.isArray(order) ? order : []) {
+    if (PAGE_ORDER.includes(k) && !seen.has(k)) { seen.add(k); out.push(k); }
+  }
+  for (const k of PAGE_ORDER) if (!seen.has(k)) out.push(k);
+  return out;
+}
 
 /* Ao abrir a ilha, em que seção ela entra conforme a linha que estava no ar. */
 const ENTRY_PAGE = {
@@ -39,7 +72,27 @@ const ENTRY_PAGE = {
   foco: 'foco',
   proxima: 'hoje',
   repouso: 'hoje',
+  agua: 'agua',
+  levantar: 'hoje',
+  indicador: 'hoje',
 };
+
+/* Bem-estar já resolvido pelo wellness.cjs; aqui só confere a forma. */
+function sanitizeWellness(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const d = src.due && typeof src.due === 'object' ? src.due : {};
+  const sm = src.summary && typeof src.summary === 'object' ? src.summary : {};
+  const water = (o) => o && typeof o === 'object' && finite(o.goalMl) !== null
+    ? { ml: Math.max(0, finite(o.ml) || 0), goalMl: o.goalMl, cupMl: Math.max(0, finite(o.cupMl) || 0) }
+    : null;
+  const stand = (o) => o && typeof o === 'object' && finite(o.sittingMin) !== null
+    ? { sittingMin: Math.max(0, Math.floor(o.sittingMin)), afterMin: finite(o.afterMin) }
+    : null;
+  return {
+    due: { water: water(d.water), stand: stand(d.stand) },
+    summary: { water: water(sm.water), stand: stand(sm.stand) },
+  };
+}
 
 function pad(n) {
   return (n < 10 ? '0' : '') + n;
@@ -96,6 +149,7 @@ function sanitizeSources(raw) {
       running: src.focus.running === true,
       kind: src.focus.kind === 'stopwatch' ? 'stopwatch' : 'pomodoro',
       mode: src.focus.mode === 'break' ? 'break' : 'work',
+      long: src.focus.mode === 'break' && src.focus.long === true,
       endsAt: finite(src.focus.endsAt),
       /* pausado: quanto sobra; o tamanho do bloco serve ao anel de progresso */
       leftMs: Math.max(0, finite(src.focus.leftMs) || 0),
@@ -116,7 +170,7 @@ function sanitizeSources(raw) {
 
 /** O que vier de fora é ligado, menos o que estiver explicitamente `false`. */
 function normalizeSections(sections) {
-  const on = { hoje: true };
+  const on = {};
   for (const k of TOGGLEABLE) on[k] = !(sections && sections[k] === false);
   return on;
 }
@@ -175,17 +229,31 @@ function resolve(input) {
 
   const reminders = on.lembretes ? sortReminders(src.reminders) : [];
   const focusRunning = on.foco && !!(src.focus && src.focus.running);
+  const well = sanitizeWellness(opts.wellness);
+  /* Durante um bloco de foco, água e levantar esperam a pausa — o foco existe
+     para não ser interrompido. Na pausa eles caem bem. */
+  const focusWork = focusRunning && src.focus.mode === 'work';
+  const standDue = !focusWork ? well.due.stand : null;
+  const waterDue = !focusWork ? well.due.water : null;
   const playing = on.player && !!(p && p.playing && text(p.title));
   const changedAt = playing ? finite(p.trackChangedAt) : null;
-  const pulse = changedAt !== null && now >= changedAt && now - changedAt < PULSE_MS;
+  /* O pulso de faixa nova é o indicador "músicas": dá para desligar. */
+  const pulse = opts.mediaPulse !== false && changedAt !== null && now >= changedAt && now - changedAt < PULSE_MS;
+  const indicator = liveIndicator(opts.indicator, now);
 
   const next = src.next && src.next.dueAt > now && src.next.dueAt - now <= NEXT_WINDOW_MS
     ? src.next
     : null;
 
   let line;
-  if (reminders.length) {
+  if (indicator) {
+    line = { kind: 'indicador', ind: indicator };
+  } else if (reminders.length) {
     line = reminderLine(reminders, now);
+  } else if (standDue) {
+    line = { kind: 'levantar', title: 'Hora de levantar', sittingMin: standDue.sittingMin };
+  } else if (waterDue) {
+    line = { kind: 'agua', title: 'Hora de beber água', ml: waterDue.ml, goalMl: waterDue.goalMl, cupMl: waterDue.cupMl };
   } else if (pulse && !focusRunning) {
     line = { kind: 'player', title: text(p.title), artist: text(p.artist) };
   } else if (focusRunning) {
@@ -200,11 +268,20 @@ function resolve(input) {
     line = { kind: 'repouso', playing, done: src.day.done, total: src.day.total };
   }
 
+  let pages = normalizeOrder(opts.order).filter(k => (k === 'agua' ? !!well.summary.water : on[k]));
+  if (!pages.length) pages = ['hoje'];
+
   return {
     line,
-    entryPage: ENTRY_PAGE[line.kind],
-    pages: PAGE_ORDER.filter(k => on[k]),
+    entryPage: pages.includes(ENTRY_PAGE[line.kind]) ? ENTRY_PAGE[line.kind] : pages[0],
+    pages,
     raise: reminders.some(r => r.urgency === 'critical'),
+    /* Água e levantar sobem por cima das janelas (sem o vermelho do crítico):
+       atrás de uma janela maximizada, ninguém veria o aviso. */
+    nudge: !!(standDue || waterDue),
+    /* Indicador sobe a ilha por cima de tudo, como o aviso do Windows faria. */
+    flash: !!indicator,
+    wellness: { due: { water: waterDue, stand: standDue }, summary: well.summary },
     /* o pulso do player aconteceu, mas o foco segurou a linha */
     muted: pulse && focusRunning,
     reminders,
@@ -219,10 +296,13 @@ function resolve(input) {
 module.exports = {
   resolve,
   sanitizeSources,
+  sanitizeWellness,
   normalizeSections,
+  normalizeOrder,
   sortReminders,
   hhmm,
   PULSE_MS,
+  INDICATOR_MS,
   NEXT_WINDOW_MS,
   PAGE_ORDER,
 };

@@ -1,7 +1,26 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, DEFAULTS } = require('./island-config.cjs');
+const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, effectivePosition, DEFAULTS } = require('./island-config.cjs');
+
+test('formato: flutuante por padrão; valor desconhecido volta ao padrão', () => {
+  assert.equal(normalizeIslandConfig(undefined).shape, 'floating');
+  assert.equal(normalizeIslandConfig({ shape: 'quadrada' }).shape, 'floating');
+  assert.equal(normalizeIslandConfig({ shape: 'drop' }).shape, 'drop');
+});
+
+test('gota não fica no meio da tela: cl/cr sobem para o topo, e a escolha original é preservada', () => {
+  assert.equal(effectivePosition({ shape: 'drop', position: 'cl' }), 'tl');
+  assert.equal(effectivePosition({ shape: 'drop', position: 'cr' }), 'tr');
+  assert.equal(effectivePosition({ shape: 'drop', position: 'bc' }), 'bc');
+  assert.equal(effectivePosition({ shape: 'floating', position: 'cl' }), 'cl');
+  assert.equal(normalizeIslandConfig({ shape: 'drop', position: 'cl' }).position, 'cl');
+});
+
+test('sombra de notificação: aviso de água/levantar sobe a ilha mesmo sem crítico', () => {
+  assert.equal(shouldBeOnTop({ raiseCritical: false }, { nudge: true }), true);
+  assert.equal(shouldBeOnTop({ raiseCritical: false }, { raise: true }), false);
+});
 const { parseLine, applyMessage, forQueue, forIsland } = require('./media.cjs');
 
 // ------------------------------------------------------------ configuração
@@ -13,7 +32,9 @@ test('sem nada salvo, a ilha vem ligada, no topo central, com tudo ativo', () =>
   assert.equal(c.pinned, false);
   assert.equal(c.hoverOpen, true);
   assert.equal(c.raiseCritical, true);
-  assert.deepEqual(c.sections, { player: true, foco: true, lembretes: true, captura: true });
+  assert.deepEqual(c.sections, { hoje: true, player: true, foco: true, lembretes: true, captura: true });
+  assert.deepEqual(c.order, ['hoje', 'player', 'foco', 'lembretes', 'agua', 'captura']);
+  assert.equal(c.alwaysVisible, false);
 });
 
 test('valor fora do esperado volta para o padrão', () => {
@@ -28,7 +49,7 @@ test('patch das Configurações mexe só no que veio, inclusive dentro das seç�
   const atual = { enabled: true, position: 'br', sections: { player: false, foco: true, lembretes: true, captura: true } };
   const c = mergeIslandConfig(atual, { sections: { captura: false } });
   assert.equal(c.position, 'br');
-  assert.deepEqual(c.sections, { player: false, foco: true, lembretes: true, captura: false });
+  assert.deepEqual(c.sections, { hoje: true, player: false, foco: true, lembretes: true, captura: false });
 });
 
 // ---------------------------------------------------------- posição na tela
@@ -109,4 +130,9 @@ test('a fila recebe o mínimo; a janela recebe a capa e o tempo', () => {
   assert.deepEqual(Object.keys(forQueue(p)).sort(), ['artist', 'playing', 'title', 'trackChangedAt']);
   assert.equal(forIsland(p).duration, 200);
   assert.equal(forIsland(p).app, 'Spotify.exe');
+});
+
+test('ordem das seções: limpa repetidas e desconhecidas, completa o que faltar', () => {
+  const c = normalizeIslandConfig({ order: ['captura', 'captura', 'nada', 'agua'] });
+  assert.deepEqual(c.order, ['captura', 'agua', 'hoje', 'player', 'foco', 'lembretes']);
 });

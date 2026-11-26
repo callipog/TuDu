@@ -13,18 +13,69 @@ interface BackupState {
   clouds: { id: string; label: string; dir: string }[];
 }
 
+export type IslandSectionId = 'hoje' | 'player' | 'foco' | 'lembretes' | 'agua' | 'captura';
+
 /** Configuração da ilha (settings.json → island). */
 export interface IslandConfig {
   enabled: boolean;
   position: 'tl' | 'tc' | 'tr' | 'cl' | 'cr' | 'bl' | 'bc' | 'br';
+  /** floating: pílula solta. drop: grudada na borda, como um entalhe do monitor. */
+  shape: 'floating' | 'drop';
+  /** A posição que vale (na gota, cl/cr sobem para o topo). Só leitura. */
+  effectivePosition: IslandConfig['position'];
   pinned: boolean;
   hoverOpen: boolean;
   raiseCritical: boolean;
   pauseAtCycleEnd: boolean;
-  sections: { player: boolean; foco: boolean; lembretes: boolean; captura: boolean };
+  sections: { hoje: boolean; player: boolean; foco: boolean; lembretes: boolean; captura: boolean };
+  /** Ordem das seções nas setas e nos pontinhos. */
+  order: IslandSectionId[];
+  /** Na gota: parada, fica como entalhe em vez de virar o fio. */
+  alwaysVisible: boolean;
+  /** Tema próprio da ilha, independente do app. */
+  theme: 'dark' | 'light' | 'system';
+  /** Sem transparência nem animações. */
+  lite: boolean;
+  /** Indicadores no lugar do aviso do Windows. */
+  indicators: {
+    enabled: boolean;
+    /** Tenta esconder o aviso nativo do Windows (não funciona em todas as versões). */
+    hideOsd: boolean;
+    show: { volume: boolean; brightness: boolean; keys: boolean; mic: boolean; media: boolean };
+  };
+  /** null: ainda não deu para saber; false: esta versão do Windows não deixa esconder o aviso. Só leitura. */
+  osdHideable: boolean | null;
   /** Notebook (mostra a bateria) ou PC de mesa. Só leitura. */
   hasBattery: boolean;
 }
+
+/** Card fixado na área de trabalho (settings.json → stickies). */
+export interface StickyState {
+  taskId: string;
+  x: number | null;
+  y: number | null;
+  w: number;
+  h: number;
+  onTop: boolean;
+  collapsed: boolean;
+}
+
+/** Lembretes de água e de levantar (settings.json → wellness). */
+export interface WellnessConfig {
+  water: { enabled: boolean; goalMl: number; everyMin: number; cupMl: number; sound: boolean };
+  stand: { enabled: boolean; afterMin: number; sound: boolean };
+}
+
+/** Configuração + o que já rolou hoje (copos, tempo sentado). */
+export interface WellnessInfo {
+  config: WellnessConfig;
+  summary: {
+    water: { ml: number; goalMl: number; cupMl: number; lastAt: number } | null;
+    stand: { sittingMin: number; afterMin: number } | null;
+  };
+}
+
+export type WellnessPatch = { water?: Partial<WellnessConfig['water']>; stand?: Partial<WellnessConfig['stand']> };
 
 /** Pedido de um botão da ilha para a janela principal. */
 export interface IslandAction {
@@ -58,11 +109,15 @@ declare global {
           startMinimized: boolean;
           openAtLogin: boolean;
           closeToTray: boolean;
+          saveMemory: boolean;
+          saveMemoryActive: boolean;
           userDataPath: string;
         }>;
         setOpenAtLogin: (v: boolean) => Promise<boolean>;
         setStartMinimized: (v: boolean) => Promise<boolean>;
         setCloseToTray: (v: boolean) => Promise<boolean>;
+        setSaveMemory: (v: boolean) => Promise<boolean>;
+        relaunch: () => Promise<void>;
         openDataFolder: () => Promise<string>;
         openExternal: (url: string) => Promise<void>;
         checkUpdates: () => Promise<{ status: string; message: string }>;
@@ -103,12 +158,28 @@ declare global {
         saved: (title: string) => void;
         onText: (cb: (text: string) => void) => () => void;
       };
+      sticky?: {
+        open: (taskId: string) => void;
+        init: () => Promise<StickyState | null>;
+        set: (patch: { onTop?: boolean; collapsed?: boolean }) => Promise<StickyState | null>;
+        close: () => void;
+        openInApp: () => void;
+        onShowTask: (cb: (taskId: string) => void) => () => void;
+      };
+      wellness: {
+        get: () => Promise<WellnessInfo>;
+        setConfig: (patch: WellnessPatch) => Promise<WellnessInfo>;
+        action: (payload: { type: 'water-drink' | 'water-undo' | 'water-snooze' | 'stand-done' | 'stand-snooze'; ml?: number }) => Promise<WellnessInfo>;
+      };
       island: {
         publish: (snapshot: IslandSnapshot) => void;
         /** Estado resolvido pela fila de prioridade (electron/island-queue.cjs). */
         state: () => Promise<unknown>;
         getConfig: () => Promise<IslandConfig>;
-        setConfig: (patch: Partial<Omit<IslandConfig, 'sections' | 'hasBattery'>> & { sections?: Partial<IslandConfig['sections']> }) => Promise<IslandConfig>;
+        setConfig: (patch: Partial<Omit<IslandConfig, 'sections' | 'hasBattery' | 'effectivePosition' | 'indicators' | 'osdHideable'>> & {
+          sections?: Partial<IslandConfig['sections']>;
+          indicators?: Partial<Omit<IslandConfig['indicators'], 'show'>> & { show?: Partial<IslandConfig['indicators']['show']> };
+        }) => Promise<IslandConfig>;
         cycleEnded: () => void;
         onAction: (cb: (action: IslandAction) => void) => () => void;
       };

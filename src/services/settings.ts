@@ -7,6 +7,10 @@ export interface AppSettings {
   startMinimized: boolean;
   openAtLogin: boolean;
   closeToTray: boolean;
+  /** Sem aceleração de GPU (vale na próxima abertura). */
+  saveMemory: boolean;
+  /** Como o app está rodando agora. */
+  saveMemoryActive: boolean;
   userDataPath: string;
 }
 
@@ -23,7 +27,7 @@ export const settingsService = {
   async get(): Promise<AppSettings> {
     const b = bridge();
     if (!b) {
-      return { version: 'web', startMinimized: false, openAtLogin: false, closeToTray: true, userDataPath: '—' };
+      return { version: 'web', startMinimized: false, openAtLogin: false, closeToTray: true, saveMemory: false, saveMemoryActive: false, userDataPath: '—' };
     }
     return await b.settings.get();
   },
@@ -32,6 +36,17 @@ export const settingsService = {
     const b = bridge();
     if (!b) return true;
     return await b.settings.setCloseToTray(v);
+  },
+
+  async setSaveMemory(v: boolean): Promise<boolean> {
+    const b = bridge();
+    if (!b) return false;
+    return await b.settings.setSaveMemory(v);
+  },
+
+  /** Fecha e abre o TuDu de novo (para valer o "Economizar memória"). */
+  async relaunch(): Promise<void> {
+    await bridge()?.settings.relaunch();
   },
 
   async setOpenAtLogin(v: boolean): Promise<boolean> {

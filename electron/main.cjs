@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, shell, globalShortcut, dialog, protocol, net } = require('electron');
+const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, shell, globalShortcut, dialog, protocol, net, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -10,9 +10,13 @@ protocol.registerSchemesAsPrivileged([
 ]);
 const bridge = require('./bridge.cjs');
 const { createIslandHub } = require('./island.cjs');
-const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, WINDOW_W, WINDOW_H } = require('./island-config.cjs');
+const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, effectivePosition, WINDOW_W, WINDOW_H } = require('./island-config.cjs');
 const { createMediaBridge, forQueue, forIsland } = require('./media.cjs');
+const { createIndicatorsBridge, FLASH_MS } = require('./indicators.cjs');
 const { createDesktopWatch } = require('./desktop-watch.cjs');
+const { askHelper } = require('./native-helper.cjs');
+const wellness = require('./wellness.cjs');
+const stickies = require('./stickies.cjs');
 const isDev = process.env.NODE_ENV === 'development';
 
 // Auto-update (só funciona em builds empacotados e publicados no GitHub Releases).
@@ -62,6 +66,15 @@ function writeSettings(patch) {
   return next;
 }
 
+/*
+ * Economizar memória: sem aceleração de GPU o Chromium desenha pela CPU e o
+ * processo de GPU cai de ~120–210 MB para ~20 MB. Desligado por padrão (o
+ * fundo atrás das janelas perde o desfoque, ver index.css); só vale
+ * na próxima abertura (tem de ser decidido antes do app ficar pronto).
+ */
+const gpuOff = readSettings().saveMemory === true;
+if (gpuOff) app.disableHardwareAcceleration();
+
 const DEFAULT_CAPTURE_SHORTCUT = 'Control+Shift+Space';
 
 let mainWindow = null;
@@ -82,10 +95,23 @@ app.isQuitting = false;
    ficam em memória — o hub reavalia a cada segundo enquanto alguém ouve, e ler
    o settings.json nesse ritmo seria desperdício. */
 let islandSections = null;
+let islandOrder = null;
+let islandPulse = null;
 const islandHub = createIslandHub({
   getSections: () => {
     if (islandSections === null) islandSections = islandConfig().sections;
     return islandSections;
+  },
+  getMediaPulse: () => {
+    if (islandPulse === null) {
+      const ind = islandConfig().indicators;
+      islandPulse = !(ind.enabled && ind.show.media === false);
+    }
+    return islandPulse;
+  },
+  getOrder: () => {
+    if (islandOrder === null) islandOrder = islandConfig().order;
+    return islandOrder;
   },
 });
 
@@ -111,10 +137,217 @@ const media = createMediaBridge({
   },
 });
 
+// Indicadores (volume, teclas, microfone, brilho): um flash curto na ilha.
+// Depois do prazo o hub precisa recalcular na hora — o relógio dele é de 1s.
+let indicatorTimer = null;
+let osdFound = null;
+const indicators = createIndicatorsBridge({
+  onIndicator: (ind) => {
+    islandHub.setIndicator(ind);
+    clearTimeout(indicatorTimer);
+    indicatorTimer = setTimeout(() => islandHub.refresh(), FLASH_MS + 30);
+  },
+  onOsd: (found) => { osdFound = found; },
+});
+
 // Win+D põe a área de trabalho na frente de tudo; o vigia sobe a ilha junto.
 const desktopWatch = createDesktopWatch({
   onChange: (on, cls) => { if (isDev) console.log('[ilha] área de trabalho', on ? 'à vista' : 'coberta', cls); },
 });
+
+/* ---- Bem-estar (água e levantar) ----------------------------------------
+   O estado (copos do dia, desde quando está sentado) fica em memória e vai
+   para o settings.json só quando a pessoa age — o relógio não grava nada. */
+const WELLNESS_TICK_MS = 20000;
+let wellnessState = null;
+let wellnessDue = { water: null, stand: null };
+let wellnessTimer = null;
+
+function wellnessConfig() {
+  return wellness.normalizeWellnessConfig(readSettings().wellness);
+}
+function idleSeconds() {
+  try { return powerMonitor.getSystemIdleTime(); } catch { return 0; }
+}
+function saveWellnessState() {
+  writeSettings({ wellnessState });
+}
+
+/* Recalcula; quando um aviso acaba de nascer, toca/notifica uma vez. */
+function wellnessTick() {
+  const now = Date.now();
+  const idle = idleSeconds();
+  const before = wellnessState ? wellnessState.water.day : null;
+  wellnessState = wellness.tick(wellnessState || readSettings().wellnessState, now, idle);
+  if (before && before !== wellnessState.water.day) saveWellnessState();
+  const cfg = wellnessConfig();
+  const due = wellness.due(cfg, wellnessState, now, idle);
+  if (due.stand && !wellnessDue.stand) announceWellness('stand', cfg, due);
+  if (due.water && !wellnessDue.water) announceWellness('water', cfg, due);
+  wellnessDue = due;
+  islandHub.setWellness({ due, summary: wellness.summary(cfg, wellnessState, now) });
+}
+
+/* Com a ilha ligada, ela é o aviso (e toca o som). Sem ela, um toast do Windows. */
+function announceWellness(which, cfg, due) {
+  const sound = which === 'water' ? cfg.water.sound : cfg.stand.sound;
+  if (islandWindow && !islandWindow.isDestroyed()) {
+    if (sound) sendIsland('island:chime', which);
+    return;
+  }
+  if (!Notification.isSupported()) return;
+  const body = which === 'water'
+    ? 'Hora de beber água · ' + due.water.ml + ' de ' + due.water.goalMl + ' ml hoje.'
+    : 'Você está sentado há ' + due.stand.sittingMin + ' min. Levante e alongue um pouco.';
+  new Notification({ title: 'TuDu', body, icon: iconPath, silent: !sound }).show();
+}
+
+function wellnessAction(type, raw) {
+  const now = Date.now();
+  const cfg = wellnessConfig();
+  const st = wellnessState || wellness.normalizeWellnessState(readSettings().wellnessState, now);
+  if (type === 'water-drink') {
+    const ml = Number(raw && raw.ml) > 0 ? Number(raw.ml) : cfg.water.cupMl;
+    wellnessState = wellness.drink(st, now, Math.min(ml, 2000));
+  } else if (type === 'water-undo') wellnessState = wellness.undrink(st, now, cfg.water.cupMl);
+  else if (type === 'water-snooze') wellnessState = wellness.snooze(st, now, 'water');
+  else if (type === 'stand-done') wellnessState = wellness.stood(st, now);
+  else if (type === 'stand-snooze') wellnessState = wellness.snooze(st, now, 'stand');
+  else return;
+  saveWellnessState();
+  wellnessTick();
+}
+
+function publicWellness() {
+  const now = Date.now();
+  const cfg = wellnessConfig();
+  const st = wellnessState || wellness.normalizeWellnessState(readSettings().wellnessState, now);
+  return { config: cfg, summary: wellness.summary(cfg, st, now) };
+}
+
+function startWellness() {
+  wellnessTick();
+  if (!wellnessTimer) wellnessTimer = setInterval(wellnessTick, WELLNESS_TICK_MS);
+  // Travar a tela ou suspender: a pessoa saiu da cadeira.
+  const levantou = () => { wellnessAction('stand-done'); };
+  powerMonitor.on('lock-screen', levantou);
+  powerMonitor.on('suspend', levantou);
+}
+
+/* ---- Cards fixados na área de trabalho ------------------------------------
+   Cada card é uma janela que carrega o app com ?sticky=<id>: mesma origem,
+   mesmo IndexedDB. A lista (posição, tamanho, por cima, recolhido) fica no
+   settings.json e os cards voltam quando o TuDu abre. */
+const stickyWindows = new Map(); // taskId -> BrowserWindow
+const stickySaveTimers = new Map();
+
+function stickyList() {
+  return stickies.normalizeStickies(readSettings().stickies);
+}
+function saveSticky(patch) {
+  writeSettings({ stickies: stickies.upsertSticky(readSettings().stickies, patch) });
+}
+function stickyOf(event) {
+  for (const [taskId, win] of stickyWindows) if (!win.isDestroyed() && win.webContents === event.sender) return taskId;
+  return null;
+}
+
+function openSticky(taskId, index) {
+  const id = String(taskId || '').slice(0, 100);
+  if (!id) return;
+  const aberta = stickyWindows.get(id);
+  if (aberta && !aberta.isDestroyed()) { aberta.showInactive(); aberta.moveTop(); return; }
+
+  const { screen: tela } = require('electron');
+  let s = stickyList().find(x => x.taskId === id);
+  if (!s) { saveSticky({ taskId: id }); s = stickyList().find(x => x.taskId === id); }
+  const bounds = stickies.stickyBounds(s, tela.getAllDisplays().map(d => d.workArea), index ?? stickyWindows.size);
+
+  const win = new BrowserWindow({
+    ...bounds,
+    minWidth: stickies.MIN_W,
+    minHeight: s.collapsed ? stickies.COLLAPSED_H : stickies.MIN_H,
+    frame: false,
+    resizable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    show: false,
+    title: 'TuDu · Card',
+    backgroundColor: '#17171c',
+    icon: iconPath,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      devTools: isDev,
+    },
+  });
+  stickyWindows.set(id, win);
+  if (s.onTop) win.setAlwaysOnTop(true, 'floating');
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event) => event.preventDefault());
+  win.once('ready-to-show', () => { if (!win.isDestroyed()) win.showInactive(); });
+
+  // Lembra onde e de que tamanho a pessoa deixou (recolhido não muda a altura salva).
+  const lembrar = () => {
+    clearTimeout(stickySaveTimers.get(id));
+    stickySaveTimers.set(id, setTimeout(() => {
+      if (win.isDestroyed()) return;
+      const b = win.getBounds();
+      const atual = stickyList().find(x => x.taskId === id);
+      if (!atual) return;
+      saveSticky({ taskId: id, x: b.x, y: b.y, w: b.width, h: atual.collapsed ? atual.h : b.height });
+    }, 400));
+  };
+  win.on('move', lembrar);
+  win.on('resize', lembrar);
+  win.on('closed', () => {
+    clearTimeout(stickySaveTimers.get(id));
+    if (stickyWindows.get(id) === win) stickyWindows.delete(id);
+  });
+
+  const query = { sticky: id };
+  if (isDev) win.loadURL('http://localhost:3000/?sticky=' + encodeURIComponent(id));
+  else win.loadFile(path.join(__dirname, '../dist/index.html'), { query });
+}
+
+/** Desafixar (pela pessoa): sai da lista. Fechar o app não desafixa nada. */
+function unpinSticky(taskId) {
+  writeSettings({ stickies: stickies.removeSticky(readSettings().stickies, taskId) });
+  const win = stickyWindows.get(taskId);
+  if (win && !win.isDestroyed()) win.close();
+}
+
+function setStickyState(taskId, patch) {
+  const win = stickyWindows.get(taskId);
+  const atual = stickyList().find(x => x.taskId === taskId);
+  if (!win || win.isDestroyed() || !atual) return null;
+  const next = { taskId };
+  if (typeof patch.onTop === 'boolean') {
+    next.onTop = patch.onTop;
+    win.setAlwaysOnTop(patch.onTop, 'floating');
+  }
+  if (typeof patch.collapsed === 'boolean' && patch.collapsed !== atual.collapsed) {
+    next.collapsed = patch.collapsed;
+    const b = win.getBounds();
+    if (patch.collapsed) {
+      next.h = b.height; // guarda a altura aberta para voltar a ela
+      win.setMinimumSize(stickies.MIN_W, stickies.COLLAPSED_H);
+      win.setSize(b.width, stickies.COLLAPSED_H);
+    } else {
+      win.setMinimumSize(stickies.MIN_W, stickies.MIN_H);
+      win.setSize(b.width, atual.h);
+    }
+  }
+  saveSticky(next);
+  return stickyList().find(x => x.taskId === taskId);
+}
 
 function createSplash() {
   splash = new BrowserWindow({
@@ -427,13 +660,20 @@ function sendIsland(channel, data) {
 }
 
 function publicIslandConfig() {
-  return { ...islandConfig(), hasBattery: hasBattery === true };
+  const cfg = islandConfig();
+  return {
+    ...cfg,
+    effectivePosition: effectivePosition(cfg),
+    hasBattery: hasBattery === true,
+    /* null: ainda não sabemos; false: esta versão do Windows não deixa esconder. */
+    osdHideable: osdFound,
+  };
 }
 
 function placeIsland() {
   if (!islandWindow || islandWindow.isDestroyed()) return;
   const { workArea } = require('electron').screen.getPrimaryDisplay();
-  islandWindow.setBounds(islandBounds(islandConfig().position, workArea, { width: WINDOW_W, height: WINDOW_H }));
+  islandWindow.setBounds(islandBounds(effectivePosition(islandConfig()), workArea, { width: WINDOW_W, height: WINDOW_H }));
 }
 
 function applyIslandZ(force) {
@@ -451,13 +691,10 @@ function applyIslandZ(force) {
 function detectBattery() {
   if (hasBattery !== null || process.platform !== 'win32') return;
   hasBattery = false;
-  require('child_process').execFile('powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-Command', '[bool](Get-CimInstance Win32_Battery)'],
-    { windowsHide: true, timeout: 15000 },
-    (err, stdout) => {
-      hasBattery = !err && /true/i.test(String(stdout));
-      sendIsland('island:config', publicIslandConfig());
-    });
+  askHelper('battery').then(msg => {
+    hasBattery = !!(msg && msg.present);
+    sendIsland('island:config', publicIslandConfig());
+  });
 }
 
 function unminimizeIsland() {
@@ -497,6 +734,8 @@ function createIslandWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      // O som do lembrete de água/levantar toca sem clique de ninguém.
+      autoplayPolicy: 'no-user-gesture-required',
       devTools: isDev
     }
   });
@@ -535,7 +774,12 @@ function createIslandWindow() {
 function syncIsland() {
   const cfg = islandConfig();
   islandSections = null;
+  islandOrder = null;
+  islandPulse = null;
   islandHub.refresh();
+  indicators.configure(cfg.indicators);
+  if (cfg.enabled && cfg.indicators.enabled) indicators.start();
+  else indicators.stop();
   if (!cfg.enabled) {
     media.stop();
     if (islandWindow && !islandWindow.isDestroyed()) islandWindow.close();
@@ -590,6 +834,13 @@ function handleIslandAction(raw) {
     case 'task-open':
       showWindow();
       forwardToMain(a);
+      break;
+    case 'water-drink':
+    case 'water-undo':
+    case 'water-snooze':
+    case 'stand-done':
+    case 'stand-snooze':
+      wellnessAction(a.type, raw);
       break;
     case 'task-complete':
     case 'task-snooze':
@@ -760,8 +1011,22 @@ app.whenReady().then(() => {
       startMinimized: !!s.startMinimized,
       openAtLogin: loginItem.openAtLogin,
       closeToTray: s.closeToTray !== false,
+      saveMemory: s.saveMemory === true,
+      // Como o app está rodando agora (a troca só vale depois de reiniciar).
+      saveMemoryActive: gpuOff,
       userDataPath: app.getPath('userData')
     };
+  });
+
+  ipcMain.handle('settings:set-save-memory', (_event, on) => {
+    writeSettings({ saveMemory: !!on });
+    return !!on;
+  });
+
+  ipcMain.handle('settings:relaunch', () => {
+    app.relaunch();
+    app.isQuitting = true;
+    app.quit();
   });
 
   ipcMain.handle('settings:set-close-to-tray', (_event, closeToTray) => {
@@ -1027,6 +1292,41 @@ app.whenReady().then(() => {
     return publicIslandConfig();
   });
 
+  // Cards fixados: pedidos da janela principal e das próprias janelinhas.
+  ipcMain.on('sticky:open', (event, taskId) => {
+    if (mainWindow && event.sender === mainWindow.webContents) openSticky(taskId);
+  });
+  ipcMain.handle('sticky:init', (event) => {
+    const id = stickyOf(event);
+    return id ? stickyList().find(x => x.taskId === id) || null : null;
+  });
+  ipcMain.handle('sticky:set', (event, patch) => {
+    const id = stickyOf(event);
+    return id && patch && typeof patch === 'object' ? setStickyState(id, patch) : null;
+  });
+  ipcMain.on('sticky:close', (event) => {
+    const id = stickyOf(event);
+    if (id) unpinSticky(id);
+  });
+  ipcMain.on('sticky:open-app', (event) => {
+    const id = stickyOf(event);
+    if (!id) return;
+    showWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sticky:show-task', id);
+  });
+
+  // Bem-estar: configurações e os botões da tela de Configurações.
+  ipcMain.handle('wellness:get', () => publicWellness());
+  ipcMain.handle('wellness:set-config', (_event, patch) => {
+    writeSettings({ wellness: wellness.mergeWellnessConfig(readSettings().wellness, patch) });
+    wellnessTick();
+    return publicWellness();
+  });
+  ipcMain.handle('wellness:action', (_event, raw) => {
+    if (raw && typeof raw === 'object') wellnessAction(String(raw.type || ''), raw);
+    return publicWellness();
+  });
+
   // Um bloco de foco terminou: pausa a música, se a pessoa quiser assim.
   ipcMain.on('island:cycle-ended', () => {
     const p = media.current();
@@ -1037,6 +1337,9 @@ app.whenReady().then(() => {
   applyCaptureShortcut();
 
   syncIsland();
+  startWellness();
+  // Os cards fixados voltam para onde estavam.
+  stickyList().forEach((s, i) => openSticky(s.taskId, i));
   const { screen: tela } = require('electron');
   tela.on('display-metrics-changed', placeIsland);
   tela.on('display-added', placeIsland);
@@ -1083,6 +1386,7 @@ app.on('before-quit', () => {
   bridge.stop();
   islandHub.stop();
   media.stop();
+  indicators.stop();
 });
 
 app.on('will-quit', () => {

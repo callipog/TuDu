@@ -8,9 +8,13 @@ import { tagService } from '../services/tags';
 import { themeService, Theme } from '../services/theme';
 import { boardStyleService, BoardGlow, BoardRadius, BOARD_GLOWS, BOARD_RADII } from '../services/boardStyle';
 import type { IslandConfig } from '../tudu-api';
+import { CheckRow } from './CheckRow';
+import { IslandSectionsList } from './IslandSectionsList';
+import { FocoSettings, AguaSettings } from './FocusWaterSettings';
+import type { Pomodoro } from '../hooks/usePomodoro';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Eye, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee, Plug, Zap, Keyboard, CloudUpload, HardDrive, Palette, Info, AlertTriangle, PanelTop, Pin, MousePointerClick, Music, Timer, BellRing, ListPlus, CalendarCheck } from 'lucide-react';
+import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Eye, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee, Plug, Zap, Keyboard, CloudUpload, HardDrive, Palette, Info, AlertTriangle, PanelTop, Pin, MousePointerClick, Music, Timer, BellRing, ListPlus, CalendarCheck, Droplets, Settings2, Feather, Volume2, MicOff, MemoryStick } from 'lucide-react';
 
 type BridgeStatus = Awaited<ReturnType<NonNullable<Window['tudu']>['bridge']['status']>>;
 type CaptureConfig = Awaited<ReturnType<NonNullable<Window['tudu']>['capture']['get']>>;
@@ -55,6 +59,8 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onDataImported: () => void;
+  /** Modo foco: as durações e o som moram no hook do App. */
+  pomo: Pomodoro;
 }
 
 /**
@@ -78,18 +84,28 @@ const PERIGO: { id: SectionId; label: string; icon: React.ReactNode; title: stri
   title: 'Zona de perigo', hint: 'Ações irreversíveis. Exporte um backup antes, se precisar.',
 };
 
+/* Abas dentro da seção Ilha: a pílula em si, o foco e a água que moram nela. */
+type IlhaTab = 'geral' | 'ilha' | 'foco' | 'agua';
+const ILHA_TABS: { id: IlhaTab; label: string; icon: React.ReactNode; hint: string }[] = [
+  { id: 'geral', label: 'Geral', icon: <Settings2 size={13} />, hint: 'Ligar a ilha, iniciar com o Windows, tema e modo leve.' },
+  { id: 'ilha', label: 'Ilha', icon: <PanelTop size={13} />, hint: 'Formato, posição, seções e como ela se comporta.' },
+  { id: 'foco', label: 'Foco', icon: <Timer size={13} />, hint: 'Pomodoro (pausas curta e longa, som do fim) e o lembrete para levantar.' },
+  { id: 'agua', label: 'Água', icon: <Droplets size={13} />, hint: 'Meta do dia, de quanto em quanto tempo lembrar e o tamanho do copo.' },
+];
+
 /* As oito posições da ilha, na ordem da grade 3 × 3 (o centro fica vazio).
    Classes literais: o Tailwind não enxerga classe montada em runtime. */
-const ISLAND_POSITIONS: { id: IslandConfig['position'] | null; label: string; mark: string }[] = [
-  { id: 'tl', label: 'Superior esquerdo', mark: 'top-[16%] left-[10%]' },
-  { id: 'tc', label: 'Superior central', mark: 'top-[16%] left-[29%]' },
-  { id: 'tr', label: 'Superior direito', mark: 'top-[16%] right-[10%]' },
+/* `dropMark`: na gota a marca encosta na borda, com o canto de dentro reto. */
+const ISLAND_POSITIONS: { id: IslandConfig['position'] | null; label: string; mark: string; dropMark?: string }[] = [
+  { id: 'tl', label: 'Superior esquerdo', mark: 'top-[16%] left-[10%]', dropMark: 'top-0 left-[10%] rounded-t-none' },
+  { id: 'tc', label: 'Superior central', mark: 'top-[16%] left-[29%]', dropMark: 'top-0 left-[29%] rounded-t-none' },
+  { id: 'tr', label: 'Superior direito', mark: 'top-[16%] right-[10%]', dropMark: 'top-0 right-[10%] rounded-t-none' },
   { id: 'cl', label: 'Central esquerdo', mark: 'top-[42%] left-[10%]' },
   { id: null, label: '', mark: '' },
   { id: 'cr', label: 'Central direito', mark: 'top-[42%] right-[10%]' },
-  { id: 'bl', label: 'Inferior esquerdo', mark: 'bottom-[16%] left-[10%]' },
-  { id: 'bc', label: 'Inferior central', mark: 'bottom-[16%] left-[29%]' },
-  { id: 'br', label: 'Inferior direito', mark: 'bottom-[16%] right-[10%]' },
+  { id: 'bl', label: 'Inferior esquerdo', mark: 'bottom-[16%] left-[10%]', dropMark: 'bottom-0 left-[10%] rounded-b-none' },
+  { id: 'bc', label: 'Inferior central', mark: 'bottom-[16%] left-[29%]', dropMark: 'bottom-0 left-[29%] rounded-b-none' },
+  { id: 'br', label: 'Inferior direito', mark: 'bottom-[16%] right-[10%]', dropMark: 'bottom-0 right-[10%] rounded-b-none' },
 ];
 
 /* Três etapas de exemplo para a amostra das bordas do board. */
@@ -99,29 +115,11 @@ const BOARD_PREVIEW = [
   { label: 'Finalizado', rgb: '16 185 129' },
 ];
 
-function CheckRow({ checked, onChange, disabled, icon, label, hint }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; icon: React.ReactNode; label: string; hint?: string }) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`w-full flex items-center gap-3 py-2 text-left ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-    >
-      <span className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors ${checked ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-zinc-500'}`}>
-        {checked && <Check size={10} strokeWidth={4} />}
-      </span>
-      <span className="text-zinc-400">{icon}</span>
-      <span className="flex-1 min-w-0">
-        <span className="block text-sm text-white">{label}</span>
-        {hint && <span className="block text-[11px] text-zinc-500">{hint}</span>}
-      </span>
-    </button>
-  );
-}
 
-export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, onDataImported, pomo }: SettingsModalProps) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [section, setSection] = useState<SectionId>('aparencia');
+  const [ilhaTab, setIlhaTab] = useState<IlhaTab>('geral');
   const [copied, setCopied] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
@@ -211,6 +209,7 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
       window.tudu?.backup.state().then(setBackup).catch(() => setBackup(null));
       window.tudu?.island?.getConfig().then(setIsland).catch(() => setIsland(null));
       setSection('aparencia');
+      setIlhaTab('geral');
       setRestaurar(null);
       setBackupMsg(null);
       setCopied(false);
@@ -232,6 +231,11 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
   async function toggleMinimized(v: boolean) {
     const result = await settingsService.setStartMinimized(v);
     setSettings(s => s ? { ...s, startMinimized: result } : s);
+  }
+
+  async function toggleSaveMemory(v: boolean) {
+    const result = await settingsService.setSaveMemory(v);
+    setSettings(s => s ? { ...s, saveMemory: result } : s);
   }
 
   async function toggleCloseToTray(v: boolean) {
@@ -326,11 +330,22 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
 
   /* Ilha: aplica na tela na hora e confirma com o que o processo principal gravou. */
   async function updateIsland(patch: Parameters<NonNullable<Window['tudu']>['island']['setConfig']>[0]) {
-    setIsland(prev => prev ? { ...prev, ...patch, sections: { ...prev.sections, ...(patch.sections ?? {}) } } as IslandConfig : prev);
+    setIsland(prev => prev ? {
+      ...prev, ...patch,
+      sections: { ...prev.sections, ...(patch.sections ?? {}) },
+      order: patch.order ?? prev.order,
+      indicators: { ...prev.indicators, ...(patch.indicators ?? {}), show: { ...prev.indicators.show, ...(patch.indicators?.show ?? {}) } },
+    } as IslandConfig : prev);
     const saved = await window.tudu?.island?.setConfig(patch).catch(() => null);
     if (saved) setIsland(saved);
   }
   const atual = section === 'perigo' ? PERIGO : SECTIONS.find(s => s.id === section)!;
+  const isDrop = island?.shape === 'drop';
+  const [waterOn, setWaterOn] = useState(false);
+  useEffect(() => {
+    if (isOpen && section === 'ilha') window.tudu?.wellness?.get().then(w => setWaterOn(w.config.water.enabled)).catch(() => {});
+  }, [isOpen, section, ilhaTab]);
+  const posAtual = island?.effectivePosition ?? island?.position;
 
   const navItem = (item: typeof PERIGO, perigoso = false) => {
     const ativo = section === item.id;
@@ -356,11 +371,11 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Configurações" size="4xl" flush>
+    <Modal isOpen={isOpen} onClose={onClose} title="Configurações" size="settings" flush>
       {/* Altura fixa (limitada pela viewport): sem isso o modal encolhe e cresce
           a cada troca de seção, já que cada painel tem um tamanho. Quem rola é
           o painel da direita, não a caixa. */}
-      <div className="flex-1 min-w-0 flex h-[min(520px,72vh)]">
+      <div className="flex-1 min-w-0 flex h-[min(600px,78vh)]">
         {/* Trilha lateral */}
         <nav className="w-[212px] shrink-0 border-r border-white/10 bg-white/[0.02] p-2.5 flex flex-col gap-1 overflow-y-auto custom-scrollbar">
           {SECTIONS.map(item => navItem(item))}
@@ -372,8 +387,29 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
         <div className="flex-1 min-w-0 overflow-y-auto custom-scrollbar px-6 py-5">
           <div className="mb-4">
             <h3 className="text-[15px] font-semibold text-white">{atual.title}</h3>
-            <p className="text-[11px] text-zinc-500 mt-0.5">{atual.hint}</p>
+            <p className="text-[11px] text-zinc-500 mt-0.5">
+              {section === 'ilha' ? ILHA_TABS.find(t => t.id === ilhaTab)!.hint : atual.hint}
+            </p>
           </div>
+
+          {section === 'ilha' && (
+            <div role="tablist" aria-label="Partes da ilha" className="flex gap-1 p-0.5 mb-5 w-fit rounded-lg bg-white/5 border border-white/10">
+              {ILHA_TABS.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={ilhaTab === t.id}
+                  onClick={() => setIlhaTab(t.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    ilhaTab === t.id ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  {t.icon} {t.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {!isElectron && (
             <p className="text-[11px] text-amber-400/80 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 mb-4">
@@ -469,9 +505,10 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
           )}
 
           {/* --------------------------------------------------------- Ilha */}
-          {section === 'ilha' && (
+          {/* -------------------------------------------------- Ilha › Geral */}
+          {section === 'ilha' && ilhaTab === 'geral' && (
             <div className="space-y-5">
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 divide-y divide-white/5">
                 <CheckRow
                   checked={!!island?.enabled}
                   onChange={(v) => updateIsland({ enabled: v })}
@@ -480,50 +517,197 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
                   label="Mostrar a ilha na área de trabalho"
                   hint="Fica atrás das outras janelas: aparece quando a área de trabalho está à vista."
                 />
+                <CheckRow
+                  checked={!!settings?.openAtLogin}
+                  onChange={toggleLogin}
+                  disabled={!isElectron}
+                  icon={<Power size={15} />}
+                  label="Iniciar com o Windows"
+                  hint="Abre o TuDu (e a ilha) ao ligar o computador. É a mesma opção de Comportamento."
+                />
               </div>
 
               <div className={`space-y-5 transition-opacity ${island?.enabled ? '' : 'opacity-40 pointer-events-none'}`}>
                 <div>
+                  <p className={sectionTitle}>Tema da ilha</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    {([
+                      { id: 'light' as const, label: 'Claro', icon: <Sun size={15} /> },
+                      { id: 'system' as const, label: 'Sistema', icon: <Monitor size={15} /> },
+                      { id: 'dark' as const, label: 'Escuro', icon: <Moon size={15} /> },
+                    ]).map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        aria-pressed={(island?.theme ?? 'dark') === opt.id}
+                        onClick={() => updateIsland({ theme: opt.id })}
+                        className={`flex items-center justify-center gap-2 text-sm font-medium rounded-lg py-2.5 border transition-colors ${
+                          (island?.theme ?? 'dark') === opt.id
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : 'text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 border-white/10'
+                        }`}
+                      >
+                        {opt.icon} {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-zinc-500 mt-2">
+                    Independe do tema do app. "Sistema" segue o modo claro/escuro do Windows.
+                    {isDrop && ' No formato gota a ilha fica sempre preta, para se fundir à moldura do monitor.'}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4">
+                  <CheckRow
+                    checked={!!island?.lite}
+                    onChange={(v) => updateIsland({ lite: v })}
+                    icon={<Feather size={15} />}
+                    label="Modo leve"
+                    hint="Sem transparência e sem animações: a ilha só troca de estado, sem deslizar nem crescer."
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* --------------------------------------------------- Ilha › Ilha */}
+          {section === 'ilha' && ilhaTab === 'ilha' && (
+            <div className="space-y-5">
+              {!island?.enabled && (
+                <p className="text-[11px] text-zinc-400 bg-white/5 border border-white/10 rounded-lg px-3 py-2">
+                  A ilha está desligada. Ligue em <button type="button" onClick={() => setIlhaTab('geral')} className="font-semibold text-indigo-300 hover:text-indigo-200">Geral</button>.
+                </p>
+              )}
+
+              <div className={`space-y-5 transition-opacity ${island?.enabled ? '' : 'opacity-40 pointer-events-none'}`}>
+                <div>
+                  <p className={sectionTitle}>Formato</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { id: 'floating' as const, label: 'Flutuante', hint: 'Uma pílula solta, com um respiro até a borda da tela.' },
+                      { id: 'drop' as const, label: 'Gota', hint: 'Grudada na borda, como parte do monitor. Parada, vira um fio fininho.' },
+                    ]).map(opt => {
+                      const on = (island?.shape ?? 'floating') === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() => updateIsland({ shape: opt.id })}
+                          className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${
+                            on ? 'bg-indigo-500/10 border-indigo-500/50' : 'bg-white/[0.02] hover:bg-white/5 border-white/10'
+                          }`}
+                        >
+                          {/* Miniatura: a borda de cima da tela e a ilha nela. */}
+                          <span className="relative shrink-0 w-[72px] h-[44px] rounded-md bg-zinc-700/60 border border-white/10 overflow-hidden" aria-hidden="true">
+                            {opt.id === 'floating'
+                              ? <span className={`absolute top-[6px] left-1/2 -translate-x-1/2 w-8 h-[7px] rounded-full ${on ? 'bg-indigo-300' : 'bg-zinc-300'}`} />
+                              : <span className={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[8px] rounded-b-[5px] ${on ? 'bg-indigo-300' : 'bg-zinc-300'}`} />}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-sm text-white font-medium">{opt.label}</span>
+                            <span className="block text-[11px] text-zinc-500 leading-snug">{opt.hint}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {isDrop && (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 -mt-2">
+                    <CheckRow
+                      checked={!!island?.alwaysVisible}
+                      onChange={(v) => updateIsland({ alwaysVisible: v })}
+                      icon={<Eye size={15} />}
+                      label="Sempre visível"
+                      hint="Parada, a gota continua como entalhe, com data e hora. Desligado, ela vira um fio fininho até ter algo para mostrar."
+                    />
+                  </div>
+                )}
+
+                <div>
                   <p className={sectionTitle}>Posição</p>
                   <div className="flex items-start gap-4">
                     <div className="grid grid-cols-3 gap-1.5 w-[168px] shrink-0">
-                      {ISLAND_POSITIONS.map((pos, i) => pos.id === null ? (
-                        <span key={i} className="aspect-[16/10] rounded-md border border-dashed border-white/5" aria-hidden="true" />
-                      ) : (
-                        <button
-                          key={pos.id}
-                          type="button"
-                          title={pos.label}
-                          aria-label={pos.label}
-                          aria-pressed={island?.position === pos.id}
-                          onClick={() => updateIsland({ position: pos.id! })}
-                          className={`relative aspect-[16/10] rounded-md border transition-colors ${
-                            island?.position === pos.id
-                              ? 'bg-indigo-500/15 border-indigo-500/50'
-                              : 'bg-white/5 hover:bg-white/10 border-white/10'
-                          }`}
-                        >
-                          <span className={`absolute w-[42%] h-[15%] rounded-full ${pos.mark} ${island?.position === pos.id ? 'bg-indigo-400' : 'bg-white/30'}`} />
-                        </button>
-                      ))}
+                      {ISLAND_POSITIONS.map((pos, i) => {
+                        if (pos.id === null) return <span key={i} className="aspect-[16/10] rounded-md border border-dashed border-white/5" aria-hidden="true" />;
+                        // Na gota, as posições do meio da tela não existem: ela vive numa borda.
+                        const off = isDrop && !pos.dropMark;
+                        const sel = posAtual === pos.id;
+                        return (
+                          <button
+                            key={pos.id}
+                            type="button"
+                            title={off ? `${pos.label} — só no formato flutuante` : pos.label}
+                            aria-label={pos.label}
+                            aria-pressed={sel}
+                            disabled={off}
+                            onClick={() => updateIsland({ position: pos.id! })}
+                            className={`relative aspect-[16/10] rounded-md border transition-colors ${
+                              off ? 'border-dashed border-white/5 cursor-not-allowed'
+                                : sel ? 'bg-indigo-500/15 border-indigo-500/50'
+                                : 'bg-white/5 hover:bg-white/10 border-white/10'
+                            }`}
+                          >
+                            {!off && <span className={`absolute w-[42%] h-[15%] rounded-full ${isDrop ? pos.dropMark : pos.mark} ${sel ? 'bg-indigo-400' : 'bg-white/30'}`} />}
+                          </button>
+                        );
+                      })}
                     </div>
                     <p className="text-[11px] text-zinc-500 pt-1">
-                      Agora em <span className="text-zinc-300 font-medium">{ISLAND_POSITIONS.find(p => p.id === island?.position)?.label ?? '—'}</span>.
+                      Agora em <span className="text-zinc-300 font-medium">{ISLAND_POSITIONS.find(p => p.id === posAtual)?.label ?? '—'}</span>.
                       A ilha cresce sempre para longe da borda em que mora.
+                      {isDrop && ' Na gota ela fica grudada em cima ou em baixo; embaixo, nasce da barra de tarefas.'}
                     </p>
                   </div>
                 </div>
 
                 <div>
                   <p className={sectionTitle}>Seções</p>
+                  <IslandSectionsList island={island} update={updateIsland} waterOn={waterOn} onOpenAgua={() => setIlhaTab('agua')} />
+                </div>
+
+                <div>
+                  <p className={sectionTitle}>Indicadores</p>
                   <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 divide-y divide-white/5">
-                    <CheckRow checked disabled onChange={() => {}} icon={<CalendarCheck size={15} />} label="Hoje" hint="A próxima tarefa e o progresso do dia. Sempre ligada: é a seção de base." />
-                    <CheckRow checked={!!island?.sections.player} onChange={(v) => updateIsland({ sections: { player: v } })} icon={<Music size={15} />} label="Player" hint="O que estiver tocando no Spotify, YouTube ou outro player do Windows." />
-                    <CheckRow checked={!!island?.sections.foco} onChange={(v) => updateIsland({ sections: { foco: v } })} icon={<Timer size={15} />} label="Timer de foco" hint="O ciclo do Pomodoro rodando fora do app." />
-                    <CheckRow checked={!!island?.sections.lembretes} onChange={(v) => updateIsland({ sections: { lembretes: v } })} icon={<BellRing size={15} />} label="Lembretes" hint="Prazos vencidos com os botões de concluir e adiar." />
-                    <CheckRow checked={!!island?.sections.captura} onChange={(v) => updateIsland({ sections: { captura: v } })} icon={<ListPlus size={15} />} label="Nova tarefa" hint="O campo de captura rápida dentro da ilha." />
+                    <CheckRow
+                      checked={!!island?.indicators.enabled}
+                      onChange={(v) => updateIsland({ indicators: { enabled: v } })}
+                      icon={<Volume2 size={15} />}
+                      label="Mostrar indicadores na ilha"
+                      hint="Ao mexer no volume, no brilho, no Caps/Num Lock ou no microfone, a ilha mostra por um instante, no lugar do aviso do Windows."
+                    />
+                    <div className={`pl-7 ${island?.indicators.enabled ? '' : 'opacity-40 pointer-events-none'}`}>
+                      <div className="grid grid-cols-2 gap-x-4 py-1">
+                        {([
+                          { k: 'volume' as const, label: 'Volume', icon: <Volume2 size={14} /> },
+                          { k: 'media' as const, label: 'Músicas (faixa nova)', icon: <Music size={14} /> },
+                          { k: 'brightness' as const, label: 'Brilho (notebook)', icon: <Sun size={14} /> },
+                          { k: 'keys' as const, label: 'Caps Lock e Num Lock', icon: <Keyboard size={14} /> },
+                          { k: 'mic' as const, label: 'Microfone mudo', icon: <MicOff size={14} /> },
+                        ]).map(o => (
+                          <React.Fragment key={o.k}><CheckRow
+                            checked={island?.indicators.show[o.k] !== false}
+                            onChange={(v) => updateIsland({ indicators: { show: { [o.k]: v } } })}
+                            icon={o.icon}
+                            label={o.label}
+                          /></React.Fragment>
+                        ))}
+                      </div>
+                      <div className="border-t border-white/5">
+                        <CheckRow
+                          checked={!!island?.indicators.hideOsd}
+                          onChange={(v) => updateIsland({ indicators: { hideOsd: v } })}
+                          icon={<EyeOff size={14} />}
+                          label="Esconder o aviso de volume e brilho do Windows"
+                          hint={island?.osdHideable === false
+                            ? 'Nesta versão do Windows o aviso é desenhado pelo próprio sistema e não dá para esconder: os dois vão aparecer.'
+                            : 'Funciona no Windows 10 e em parte das versões do 11. As teclas de volume continuam funcionando normalmente.'}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-zinc-500 mt-2">Cada seção ligada vira um ponto embaixo da ilha. Desligar também a tira da fila: ela nunca toma a linha fechada.</p>
                 </div>
 
                 <div>
@@ -538,6 +722,12 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
               </div>
             </div>
           )}
+
+          {/* --------------------------------------------------------- Foco */}
+          {section === 'ilha' && ilhaTab === 'foco' && <FocoSettings pomo={pomo} isOpen={isOpen} />}
+
+          {/* --------------------------------------------------------- Água */}
+          {section === 'ilha' && ilhaTab === 'agua' && <AguaSettings isOpen={isOpen} />}
 
           {/* ----------------------------------------------- Comportamento */}
           {section === 'comportamento' && (
@@ -570,6 +760,33 @@ export function SettingsModal({ isOpen, onClose, onDataImported }: SettingsModal
                     hint="Ao clicar no X, esconde na bandeja. Se desativado, o X fecha o app por completo."
                   />
                 </div>
+              </div>
+
+              <div>
+                <p className={sectionTitle}>Desempenho</p>
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 divide-y divide-white/5">
+                  <CheckRow
+                    checked={!!settings?.saveMemory}
+                    onChange={toggleSaveMemory}
+                    disabled={!isElectron}
+                    icon={<MemoryStick size={15} />}
+                    label="Economizar memória"
+                    hint="Desliga a aceleração de GPU: o TuDu usa cerca de 150 MB a menos de RAM. O fundo atrás das janelas escurece em vez de desfocar."
+                  />
+                </div>
+                {settings && settings.saveMemory !== settings.saveMemoryActive && (
+                  <div className="mt-2 flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                    <RefreshCw size={14} className="shrink-0 text-amber-300" />
+                    <span className="flex-1 text-xs text-amber-200">Vale depois de reiniciar o TuDu.</span>
+                    <button
+                      type="button"
+                      onClick={() => settingsService.relaunch()}
+                      className="shrink-0 rounded-md bg-amber-500/20 px-2.5 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/30 transition-colors"
+                    >
+                      Reiniciar agora
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>

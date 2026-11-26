@@ -183,9 +183,20 @@ test('as setas andam só pelas seções ligadas, sempre na mesma ordem', () => {
   assert.deepEqual(s.pages, ['hoje', 'foco', 'lembretes']);
 });
 
-test('"hoje" é a base e não desliga', () => {
+test('"hoje" também desliga; a entrada cai na primeira seção que sobrou', () => {
   const s = resolve({ sections: { hoje: false }, now: NOW });
-  assert.equal(s.pages[0], 'hoje');
+  assert.deepEqual(s.pages, ['player', 'foco', 'lembretes', 'captura']);
+  assert.equal(s.entryPage, 'player');
+});
+
+test('tudo desligado: "hoje" volta, o painel nunca fica vazio', () => {
+  const s = resolve({ sections: { hoje: false, player: false, foco: false, lembretes: false, captura: false }, now: NOW });
+  assert.deepEqual(s.pages, ['hoje']);
+});
+
+test('a ordem das seções segue a escolhida; o que faltar entra no fim', () => {
+  const s = resolve({ order: ['captura', 'foco', 'xyz', 'foco'], now: NOW });
+  assert.deepEqual(s.pages, ['captura', 'foco', 'hoje', 'player', 'lembretes']);
 });
 
 test('seção desligada sai da fila: lembretes desligados não aparecem nem sobem', () => {
@@ -320,4 +331,70 @@ test('as seções recebem próxima, foco e dia mesmo fora da linha', () => {
 test('foco desligado também some do painel', () => {
   const s = resolve({ sources: { focus: runningFocus }, sections: { foco: false }, now: NOW });
   assert.equal(s.focus, null);
+});
+
+// ------------------------------------------------------------ indicadores
+
+test('indicador ganha de tudo por 1,6s e sobe a ilha', () => {
+  const sources = { reminders: [reminder('a', 'critical', NOW)] };
+  const r = resolve({ sources, indicator: { kind: 'volume', level: 0.42, at: NOW - 500 }, now: NOW });
+  assert.equal(r.line.kind, 'indicador');
+  assert.equal(r.line.ind.level, 0.42);
+  assert.equal(r.flash, true);
+  const depois = resolve({ sources, indicator: { kind: 'volume', level: 0.42, at: NOW - 1700 }, now: NOW });
+  assert.equal(depois.line.kind, 'lembrete');
+  assert.equal(depois.flash, false);
+});
+
+test('indicador sem forma certa é ignorado', () => {
+  assert.equal(resolve({ indicator: { kind: 'explosao', at: NOW }, now: NOW }).line.kind, 'repouso');
+});
+
+test('o pulso de faixa nova pode ser desligado', () => {
+  const player = { title: 'Faixa', artist: 'X', playing: true, trackChangedAt: NOW - 1000 };
+  assert.equal(resolve({ player, now: NOW }).line.kind, 'player');
+  assert.equal(resolve({ player, mediaPulse: false, now: NOW }).line.kind, 'repouso');
+});
+
+// ------------------------------------------------------------ bem-estar
+
+const WELL_DUE = {
+  due: { water: { ml: 500, goalMl: 2000, cupMl: 250 }, stand: null },
+  summary: { water: { ml: 500, goalMl: 2000, cupMl: 250 }, stand: null },
+};
+
+test('água vencida vira a linha e sobe por cima das janelas, sem o vermelho do crítico', () => {
+  const r = resolve({ sources: {}, wellness: WELL_DUE, now: 1000 });
+  assert.equal(r.line.kind, 'agua');
+  assert.equal(r.line.ml, 500);
+  assert.equal(r.entryPage, 'agua');
+  assert.equal(r.nudge, true);
+  assert.equal(r.raise, false);
+});
+
+test('levantar ganha da água', () => {
+  const w = { ...WELL_DUE, due: { ...WELL_DUE.due, stand: { sittingMin: 55 } } };
+  const r = resolve({ sources: {}, wellness: w, now: 1000 });
+  assert.equal(r.line.kind, 'levantar');
+  assert.equal(r.line.sittingMin, 55);
+});
+
+test('lembrete de prazo ganha do bem-estar', () => {
+  const sources = { reminders: [{ id: 'a:due:x', taskId: 'a', title: 'Pagar conta', urgency: 'medium', firedAt: 900 }] };
+  const r = resolve({ sources, wellness: WELL_DUE, now: 1000 });
+  assert.equal(r.line.kind, 'lembrete');
+});
+
+test('durante o bloco de foco, água espera; na pausa, aparece', () => {
+  const focus = { running: true, kind: 'pomodoro', mode: 'work', endsAt: 5000, leftMs: 4000, totalMs: 9000, cycles: 0 };
+  const r1 = resolve({ sources: { focus }, wellness: WELL_DUE, now: 1000 });
+  assert.equal(r1.line.kind, 'foco');
+  assert.equal(r1.nudge, false);
+  const r2 = resolve({ sources: { focus: { ...focus, mode: 'break' } }, wellness: WELL_DUE, now: 1000 });
+  assert.equal(r2.line.kind, 'agua');
+});
+
+test('a seção Água só existe com o lembrete de água ligado', () => {
+  assert.ok(!resolve({ sources: {}, now: 1 }).pages.includes('agua'));
+  assert.ok(resolve({ sources: {}, wellness: WELL_DUE, now: 1 }).pages.includes('agua'));
 });

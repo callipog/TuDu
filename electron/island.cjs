@@ -18,6 +18,7 @@ const { resolve } = require('./island-queue.cjs');
 function createIslandHub(options) {
   const opts = options || {};
   const getSections = opts.getSections || (() => ({}));
+  const getOrder = opts.getOrder || (() => null);
   const now = opts.now || Date.now;
   const tickMs = opts.tickMs || 1000;
   const setTimer = opts.setInterval || setInterval;
@@ -25,13 +26,16 @@ function createIslandHub(options) {
 
   let sources = {};
   let player = null;
+  let wellness = null;
+  let indicator = null;
+  const getMediaPulse = opts.getMediaPulse || (() => true);
   let last = null;
   let lastKey = '';
   let timer = null;
   const listeners = new Set();
 
   function compute() {
-    return resolve({ sources, player, sections: getSections(), now: now() });
+    return resolve({ sources, player, wellness, indicator, mediaPulse: getMediaPulse(), sections: getSections(), order: getOrder(), now: now() });
   }
 
   /* Recalcula e, se mudou, entrega para quem estiver ouvindo. */
@@ -58,6 +62,18 @@ function createIslandHub(options) {
     /** Faixa atual do player (SMTC). `null` quando nada toca. */
     setPlayer(p) {
       player = p && typeof p === 'object' ? p : null;
+      return refresh();
+    },
+
+    /** Água e levantar, já resolvidos pelo wellness.cjs ({ due, summary }). */
+    setWellness(w) {
+      wellness = w && typeof w === 'object' ? w : null;
+      return refresh();
+    },
+
+    /** Indicador novo (volume, teclas...): vale por alguns segundos. */
+    setIndicator(ind) {
+      indicator = ind && typeof ind === 'object' ? ind : null;
       return refresh();
     },
 

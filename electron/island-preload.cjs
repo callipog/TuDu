@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('tuduIsland', {
   onConfig: listen('island:config'),
   onPlayer: listen('island:player'),
   onSaved: listen('island:saved'),
+  onChime: listen('island:chime'),
   /** O mouse está sobre a pílula? Fora dela o clique atravessa a janela. */
   hit: (over) => ipcRenderer.send('island:hit', !!over),
   action: (payload) => ipcRenderer.send('island:action', payload),

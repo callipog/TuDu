@@ -8,18 +8,40 @@
  * daria tremida; assim ela só se move quando a posição muda.
  */
 
+const { normalizeIndicatorsConfig } = require('./indicators.cjs');
+
 const POSITIONS = ['tl', 'tc', 'tr', 'cl', 'cr', 'bl', 'bc', 'br'];
-const SECTIONS = ['player', 'foco', 'lembretes', 'captura'];
+const SECTIONS = ['hoje', 'player', 'foco', 'lembretes', 'captura'];
+/* floating: a pílula solta, com respiro até a borda.
+   drop: grudada na borda, como um entalhe do monitor; parada, vira um fio. */
+const SHAPES = ['floating', 'drop'];
+const THEMES = ['dark', 'light', 'system'];
+const ORDERABLE = ['hoje', 'player', 'foco', 'lembretes', 'agua', 'captura'];
 
 const DEFAULTS = Object.freeze({
   enabled: true,
   position: 'tc',
+  shape: 'floating',
+  /* Na gota: parada, continua como entalhe em vez de virar o fio. */
+  alwaysVisible: false,
+  /* Tema próprio da ilha (independe do app) e modo leve (sem transparência nem animação). */
+  theme: 'dark',
+  lite: false,
   pinned: false,
   hoverOpen: true,
   raiseCritical: true,
   pauseAtCycleEnd: true,
-  sections: Object.freeze({ player: true, foco: true, lembretes: true, captura: true }),
+  sections: Object.freeze({ hoje: true, player: true, foco: true, lembretes: true, captura: true }),
+  order: Object.freeze(ORDERABLE.slice()),
 });
+
+function order(v) {
+  const seen = new Set();
+  const out = [];
+  for (const k of Array.isArray(v) ? v : []) if (ORDERABLE.includes(k) && !seen.has(k)) { seen.add(k); out.push(k); }
+  for (const k of ORDERABLE) if (!seen.has(k)) out.push(k);
+  return out;
+}
 
 /* Janela: painel aberto (358 × 156) + alfinete dos dois lados + sombra. */
 const WINDOW_W = 460;
@@ -38,6 +60,12 @@ function normalizeIslandConfig(raw) {
   return {
     enabled: bool(src.enabled, DEFAULTS.enabled),
     position: POSITIONS.includes(src.position) ? src.position : DEFAULTS.position,
+    shape: SHAPES.includes(src.shape) ? src.shape : DEFAULTS.shape,
+    alwaysVisible: bool(src.alwaysVisible, DEFAULTS.alwaysVisible),
+    theme: THEMES.includes(src.theme) ? src.theme : DEFAULTS.theme,
+    lite: bool(src.lite, DEFAULTS.lite),
+    order: order(src.order),
+    indicators: normalizeIndicatorsConfig(src.indicators),
     pinned: bool(src.pinned, DEFAULTS.pinned),
     hoverOpen: bool(src.hoverOpen, DEFAULTS.hoverOpen),
     raiseCritical: bool(src.raiseCritical, DEFAULTS.raiseCritical),
@@ -50,11 +78,24 @@ function normalizeIslandConfig(raw) {
 function mergeIslandConfig(current, patch) {
   const base = normalizeIslandConfig(current);
   const p = patch && typeof patch === 'object' ? patch : {};
+  const ind = p.indicators && typeof p.indicators === 'object' ? p.indicators : {};
   return normalizeIslandConfig({
     ...base,
     ...p,
+    indicators: { ...base.indicators, ...ind, show: { ...base.indicators.show, ...(ind.show && typeof ind.show === 'object' ? ind.show : {}) } },
     sections: { ...base.sections, ...(p.sections && typeof p.sections === 'object' ? p.sections : {}) },
   });
+}
+
+/**
+ * Posição que vale de fato. A gota só existe grudada numa borda de cima ou de
+ * baixo: as posições do meio da tela (cl/cr) sobem para o topo. A escolhida
+ * fica salva, para voltar a valer se a pessoa trocar para flutuante.
+ */
+function effectivePosition(config) {
+  const c = normalizeIslandConfig(config);
+  if (c.shape === 'drop' && c.position[0] === 'c') return 't' + c.position[1];
+  return c.position;
 }
 
 /**
@@ -90,6 +131,8 @@ function islandBounds(position, workArea, size) {
 function shouldBeOnTop(config, state) {
   const c = normalizeIslandConfig(config);
   if (c.pinned) return true;
+  // Água e levantar: escondido atrás de uma janela, o aviso não adianta nada.
+  if (state && (state.nudge || state.flash)) return true;
   return !!(c.raiseCritical && state && state.raise);
 }
 
@@ -98,7 +141,9 @@ module.exports = {
   mergeIslandConfig,
   islandBounds,
   shouldBeOnTop,
+  effectivePosition,
   POSITIONS,
+  SHAPES,
   DEFAULTS,
   WINDOW_W,
   WINDOW_H,

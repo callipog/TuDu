@@ -2,7 +2,7 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-type ModalSize = 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
+type ModalSize = 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | 'settings';
 
 interface ModalProps {
   isOpen: boolean;
@@ -25,6 +25,8 @@ const sizeClass: Record<ModalSize, string> = {
   '2xl': 'max-w-2xl',
   '3xl': 'max-w-3xl',
   '4xl': 'max-w-4xl',
+  /* Configurações: um pouco mais larga que 4xl, cabem as abas da Ilha. */
+  settings: 'max-w-[960px]',
 };
 
 export function Modal({ isOpen, onClose, title, children, size = 'lg', flush = false }: ModalProps) {

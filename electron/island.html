@@ -64,6 +64,30 @@
   .island[data-line="player"]   { width: 308px; height: 49px; border-radius: 16px; }
   .island[data-line="lembrete"] { width: 324px; height: 47px; border-radius: 15px; }
   .island[data-line="feito"]    { width: 240px; height: 41px; border-radius: 14px; }
+  .island[data-line="indicador"] { width: 250px; height: 41px; border-radius: 14px; }
+  .ind-ic { flex: 0 0 auto; width: 18px; height: 18px; color: var(--fg); }
+  .ind-ic.off { color: #f87171; }
+  .ind-pct { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; color: var(--fg); }
+  .ind-bar { flex: 1; height: 5px; border-radius: 99px; background: rgba(255,255,255,.16); overflow: hidden; }
+  .ind-bar i { display: block; height: 100%; border-radius: 99px; background: var(--fg); transition: width .12s linear; }
+  body.light:not(.drop) .ind-bar { background: rgba(0,0,0,.12); }
+  .key { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; border: 1px solid currentColor; color: var(--fg-dim); }
+  .key.on { color: #a5f3fc; }
+  .island[data-line="agua"]     { width: 300px; height: 45px; border-radius: 15px; }
+  .island[data-line="levantar"] { width: 300px; height: 45px; border-radius: 15px; }
+  body.nudged .island { border-color: rgba(56,189,248,.5); box-shadow: 0 14px 30px -14px rgba(0,0,0,.9), 0 0 22px -8px rgba(56,189,248,.55); }
+
+  /* Água: um copo que enche com o progresso do dia. */
+  .cup { flex: 0 0 auto; width: 16px; height: 20px; position: relative; }
+  .cup svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cup .fill { fill: #38bdf8; }
+  .cup.big { width: 24px; height: 30px; }
+  .wbar { flex: 1; height: 6px; border-radius: 99px; background: rgba(255,255,255,.12); overflow: hidden; }
+  .wbar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #0ea5e9, #38bdf8); transition: width .6s var(--ease); }
+  .btn.water { color: #fff; background: rgba(14,165,233,.8); border-color: rgba(56,189,248,.9); }
+  .btn.water:hover { background: #0ea5e9; }
+  .stand { flex: 0 0 auto; width: 20px; height: 20px; color: #38bdf8; }
+  .alert { display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-radius: 10px; background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.3); }
   .island.open { width: 358px; height: 156px; border-radius: 18px; }
 
   .closed { position: absolute; inset: 0; transition: opacity .16s ease; }
@@ -221,7 +245,79 @@
   .pin:hover { color: var(--fg); }
   body.pinned .pin { color: #cfc4ff; background: rgba(124,92,255,.22); border-color: rgba(124,92,255,.5); }
 
+  /* ---------- formato gota ----------
+     Grudada na borda, preto puro, sem borda: parece um entalhe do monitor.
+     Os "ombros" (.sh) fazem a curva côncava de onde a ilha nasce. Parada, ela
+     encolhe para um fio de 5 px; desce quando tem algo a mostrar ou quando o
+     mouse chega. Em baixo, o mesmo desenho de cabeça para baixo. */
+  body.drop[data-pos^="t"] .slot { padding-top: 0; }
+  body.drop[data-pos^="b"] .slot { padding-bottom: 0; }
+  body.drop[data-pos$="l"] .slot { padding-left: 24px; }
+  body.drop[data-pos$="r"] .slot { padding-right: 24px; }
+  body.drop .island {
+    background: #000; border: 0; box-shadow: none;
+    transition: width .42s var(--ease), height .42s var(--ease), border-radius .42s var(--ease), box-shadow .3s ease;
+  }
+  body.drop[data-pos^="t"] .island { border-top-left-radius: 0 !important; border-top-right-radius: 0 !important; }
+  body.drop[data-pos^="b"] .island { border-bottom-left-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+  body.drop .wrap.fio .island { width: 90px; height: 5px; border-radius: 3px; }
+  body.drop .wrap.fio .closed { opacity: 0; }
+  body.drop.raised .island { box-shadow: 0 0 22px -6px rgba(244,63,94,.7); }
+  body.drop.nudged .island { box-shadow: 0 0 22px -8px rgba(56,189,248,.65); }
+
+  .sh { display: none; position: absolute; width: 12px; height: 12px; pointer-events: none; transition: width .42s var(--ease), height .42s var(--ease); }
+  body.drop .sh { display: block; }
+  body.drop .wrap.fio .sh { width: 3px; height: 3px; }
+  body.drop[data-pos^="t"] .sh { top: 0; }
+  body.drop[data-pos^="b"] .sh { bottom: 0; }
+  .sh.l { right: 100%; }
+  .sh.r { left: 100%; }
+  body.drop[data-pos^="t"] .sh.l { background: radial-gradient(circle farthest-side at 0 100%, transparent 96%, #000 100%); }
+  body.drop[data-pos^="t"] .sh.r { background: radial-gradient(circle farthest-side at 100% 100%, transparent 96%, #000 100%); }
+  body.drop[data-pos^="b"] .sh.l { background: radial-gradient(circle farthest-side at 0 0, transparent 96%, #000 100%); }
+  body.drop[data-pos^="b"] .sh.r { background: radial-gradient(circle farthest-side at 100% 0, transparent 96%, #000 100%); }
+
+  /* O fio tem 5 px: uma faixa invisível maior deixa o mouse achá-lo. */
+  body.drop .wrap::before { content: ''; position: absolute; left: -18px; right: -18px; height: 18px; }
+  body.drop[data-pos^="t"] .wrap::before { top: 0; }
+  body.drop[data-pos^="b"] .wrap::before { bottom: 0; }
+  body.drop .pin { margin-left: 18px; }
+  body.drop[data-pos$="r"] .pin { margin-left: 0; margin-right: 18px; }
+  body.drop .wrap.fio .pin { opacity: 0; pointer-events: none; }
+
+  /* ---------- tema claro (só no formato flutuante) ----------
+     A gota é sempre preta: ela precisa se fundir à moldura do monitor. */
+  body.light:not(.drop) {
+    --fg: #18181b; --fg-dim: #52525b; --fg-mute: #71717a; --wave: #6d4cff;
+  }
+  body.light:not(.drop) .island { background: rgba(250,250,252,.97); border-color: rgba(0,0,0,.1); box-shadow: 0 14px 30px -16px rgba(0,0,0,.35); }
+  body.light:not(.drop) .mark { color: #27272a; }
+  body.light:not(.drop) .nav { background: rgba(0,0,0,.06); }
+  body.light:not(.drop) .nav:hover { background: rgba(0,0,0,.12); }
+  body.light:not(.drop) .dots button { background: rgba(0,0,0,.2); }
+  body.light:not(.drop) .dots button[aria-current="true"] { background: var(--fg); }
+  body.light:not(.drop) .ring .trk { stroke: rgba(0,0,0,.1); }
+  body.light:not(.drop) .bar, body.light:not(.drop) .wbar { background: rgba(0,0,0,.1); }
+  body.light:not(.drop) .bar b { background: #18181b; }
+  body.light:not(.drop) .btn { background: rgba(0,0,0,.04); border-color: rgba(0,0,0,.1); }
+  body.light:not(.drop) .btn:hover { background: rgba(0,0,0,.09); }
+  body.light:not(.drop) .btn.primary, body.light:not(.drop) .btn.water { color: #fff; }
+  body.light:not(.drop) .input { background: rgba(0,0,0,.03); border-color: rgba(0,0,0,.12); }
+  body.light:not(.drop) .badge { color: #5b3fd6; background: rgba(124,92,255,.12); }
+  body.light:not(.drop) .pin { background: rgba(250,250,252,.95); border-color: rgba(0,0,0,.12); }
+  body.light:not(.drop) .alert { background: rgba(56,189,248,.12); }
+  body.light:not(.drop) .cup path { stroke: rgba(0,0,0,.45); }
+
+  /* ---------- modo leve ----------
+     Sem transparência e sem animação: menos trabalho de GPU, nada se mexendo. */
+  body.lite .island { background: rgb(12,12,15); }
+  body.lite.light:not(.drop) .island { background: rgb(250,250,252); }
+  body.lite .island, body.lite .crow, body.lite .page, body.lite .opened, body.lite .closed,
+  body.lite .dots button, body.lite .sh, body.lite .wbar i, body.lite .ring .bar { transition: none !important; }
+  body.lite .eq b { animation: none; }
+
   @media (prefers-reduced-motion: reduce) {
+    .sh { transition: none; }
     .island, .crow, .page, .opened, .closed, .dots button { transition: none; }
     .eq b { animation: none; }
   }
@@ -230,6 +326,7 @@
 <body data-pos="tc">
   <div class="slot">
     <div class="wrap hit" id="wrap">
+      <span class="sh l" aria-hidden="true"></span><span class="sh r" aria-hidden="true"></span>
       <div class="island" id="island" data-line="repouso" tabindex="0" role="group" aria-label="Ilha do TuDu">
         <div class="closed" id="closed"></div>
         <div class="opened">
@@ -267,7 +364,7 @@
   var DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   var MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
   var URG = { low: '#10b981', medium: '#f59e0b', high: '#f97316', critical: '#f43f5e' };
-  var PAGE_NAME = { hoje: 'Hoje', player: 'Player', foco: 'Timer de foco', lembretes: 'Lembretes', captura: 'Nova tarefa' };
+  var PAGE_NAME = { hoje: 'Hoje', player: 'Player', foco: 'Timer de foco', lembretes: 'Lembretes', agua: 'Água', captura: 'Nova tarefa' };
 
   var I = {
     mark: '<svg class="mark" viewBox="17 25 67 50" aria-hidden="true"><path d="M42 67L76 33" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round"/><circle cx="25" cy="50" r="8"/></svg>',
@@ -276,7 +373,13 @@
     prev: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 12 20 5v14zM3 12l9-7v14z"/></svg>',
     next: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 12 4 19V5zm8 0-9 7V5z"/></svg>',
     pause: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6.6" y="4" width="4.4" height="16" rx="1.9"/><rect x="13" y="4" width="4.4" height="16" rx="1.9"/></svg>',
-    play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.5 4.8v14.4a1 1 0 0 0 1.5.86l11.6-7.2a1 1 0 0 0 0-1.72L9 3.94a1 1 0 0 0-1.5.86z"/></svg>'
+    play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.5 4.8v14.4a1 1 0 0 0 1.5.86l11.6-7.2a1 1 0 0 0 0-1.72L9 3.94a1 1 0 0 0-1.5.86z"/></svg>',
+    vol: '<svg class="ind-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>',
+    volOff: '<svg class="ind-ic off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6m0-6 6 6"/></svg>',
+    sun: '<svg class="ind-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+    mic: '<svg class="ind-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>',
+    micOff: '<svg class="ind-ic off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 9.3V5a3 3 0 0 0-5.7-1.3M9 9v3a3 3 0 0 0 5.1 2.1M19 10a7 7 0 0 1-1.1 3.8M5 10a7 7 0 0 0 11.5 5.4M12 17v5M2 2l20 20"/></svg>',
+    stand: '<svg class="stand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.5" r="2"/><path d="M12 8v7m0 0-3 6m3-6 3 6M7 11l5-3 5 3"/></svg>'
   };
 
   var state = null, config = null, player = null;
@@ -358,7 +461,7 @@
   }
   function focusLabel(f) {
     if (!f) return '';
-    var what = f.kind === 'stopwatch' ? 'Cronômetro' : (f.mode === 'break' ? 'Pausa' : 'Foco');
+    var what = f.kind === 'stopwatch' ? 'Cronômetro' : (f.mode === 'break' ? (f.long ? 'Pausa longa' : 'Pausa') : 'Foco');
     return what + (f.cycles ? ' · ' + (f.cycles + (f.mode === 'work' ? 1 : 0)) + 'º ciclo' : '') + (f.running ? '' : ' · pausado');
   }
   function playerPos(p) {
@@ -367,6 +470,21 @@
     if (p.playing && p.updatedAt) pos += (Date.now() - p.updatedAt) / 1000;
     return p.duration ? Math.min(pos, p.duration) : pos;
   }
+
+  /* Copo: a água sobe com o progresso do dia (0 a 1). */
+  var CUP_PATH = 'M2.4 2.5h11.2l-1.5 15a1.5 1.5 0 0 1-1.5 1.4H5.4a1.5 1.5 0 0 1-1.5-1.4z';
+  function cup(frac, big) {
+    var f = Math.max(0, Math.min(1, frac || 0)), h = 16.5 * f, id = 'cupc' + (big ? 'b' : 's');
+    return '<span class="cup' + (big ? ' big' : '') + '"><svg viewBox="0 0 16 20" aria-hidden="true">'
+      + '<defs><clipPath id="' + id + '"><path d="' + CUP_PATH + '"/></clipPath></defs>'
+      + '<rect class="fill" clip-path="url(#' + id + ')" x="0" y="' + (19 - h).toFixed(1) + '" width="16" height="' + h.toFixed(1) + '"/>'
+      + '<path d="' + CUP_PATH + '" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.3" stroke-linejoin="round"/></svg></span>';
+  }
+  function waterInfo() {
+    var w = state && state.wellness && state.wellness.summary && state.wellness.summary.water;
+    return w || null;
+  }
+  function litros(ml) { return ml >= 1000 ? String(+(ml / 1000).toFixed(2)).replace('.', ',') + ' L' : ml + ' ml'; }
 
   /* -------------------------------------------------- linha fechada -- */
   function lineKind() {
@@ -395,6 +513,33 @@
         + '<span class="stack"><span class="title">' + esc(l.title) + '</span><span class="sub">' + esc(l.artist) + '</span></span>'
         + eq();
     }
+    if (k === 'indicador') {
+      var ind = l.ind, pct = ind.level == null ? 0 : Math.round(ind.level * 100);
+      if (ind.kind === 'volume') {
+        var mudo = ind.muted || pct === 0;
+        return (mudo ? I.volOff : I.vol)
+          + '<span class="ind-bar"><i style="width:' + (mudo ? 0 : pct) + '%"></i></span>'
+          + '<span class="ind-pct">' + (ind.muted ? 'mudo' : pct + '%') + '</span>';
+      }
+      if (ind.kind === 'brightness') {
+        return I.sun + '<span class="ind-bar"><i style="width:' + pct + '%"></i></span><span class="ind-pct">' + pct + '%</span>';
+      }
+      if (ind.kind === 'mic') {
+        return (ind.muted ? I.micOff : I.mic) + '<span class="title" style="font-weight:600">Microfone ' + (ind.muted ? 'mudo' : 'ligado') + '</span>';
+      }
+      var nome = ind.kind === 'caps' ? 'Caps Lock' : 'Num Lock';
+      return '<span class="key' + (ind.on ? ' on' : '') + '">' + (ind.kind === 'caps' ? 'A' : '1') + '</span>'
+        + '<span class="title" style="font-weight:600">' + nome + ' ' + (ind.on ? 'ligado' : 'desligado') + '</span>';
+    }
+    if (k === 'agua') {
+      return cup(l.goalMl ? l.ml / l.goalMl : 0)
+        + '<span class="stack"><span class="title" style="font-weight:600">' + esc(l.title) + '</span><span class="sub">' + litros(l.ml) + ' de ' + litros(l.goalMl) + ' hoje</span></span>'
+        + '<span class="badge" style="color:#bae6fd;background:rgba(14,165,233,.2);border-color:rgba(56,189,248,.4)">+' + l.cupMl + ' ml</span>';
+    }
+    if (k === 'levantar') {
+      return I.stand
+        + '<span class="stack"><span class="title" style="font-weight:600">' + esc(l.title) + '</span><span class="sub">sentado há ' + l.sittingMin + ' min</span></span>';
+    }
     if (k === 'lembrete') {
       return '<span class="dot" style="background:' + (l.critical ? URG.critical : URG.medium) + '"></span>'
         + '<span class="title" style="font-weight:600">' + esc(l.title) + '</span>'
@@ -408,7 +553,26 @@
   }
 
   /* -------------------------------------------------- painel aberto -- */
+  /* Levantar ocupa uma seção enquanto vale: a Hoje, ou a primeira ligada se
+     a Hoje estiver desligada. É um aviso de um clique só. */
+  /* Tema da ilha: claro, escuro ou o do Windows (que o Chromium já reflete). */
+  var darkMq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function islandLight() {
+    var t = (config && config.theme) || 'dark';
+    if (t === 'system') return !!(darkMq && !darkMq.matches);
+    return t === 'light';
+  }
+  if (darkMq && darkMq.addEventListener) darkMq.addEventListener('change', function () { render(); });
+
+  function standHost() { var ps = pages(); return ps.indexOf('hoje') >= 0 ? 'hoje' : ps[0]; }
   function pageHtml(p) {
+    var sd = state && state.wellness && state.wellness.due && state.wellness.due.stand;
+    if (sd && p === standHost()) {
+      return '<div class="alert">' + I.stand + '<span class="stack"><span class="title" style="font-weight:600">Hora de levantar</span>'
+        + '<span class="sub">Sentado há ' + sd.sittingMin + ' min. Alongue, ande um pouco.</span></span></div>'
+        + '<div class="btns"><button class="btn water" data-act="stand-done">Levantei</button>'
+        + '<button class="btn" data-act="stand-snooze">+10 min</button></div>';
+    }
     if (p === 'hoje') {
       var n = state && state.next, d = state && state.day;
       var first = n
@@ -467,6 +631,21 @@
         + '<button class="btn" data-act="task-snooze" data-id="' + esc(r.id) + '">+10 min</button>'
         + '<button class="btn" data-act="task-open" data-task="' + esc(r.taskId) + '">Abrir</button></div>';
     }
+    if (p === 'agua') {
+      var w = waterInfo();
+      if (!w) return '<div class="empty">Lembrete de água desligado.</div>';
+      var wd = state.wellness.due && state.wellness.due.water;
+      var wf = w.goalMl ? Math.min(1, w.ml / w.goalMl) : 0;
+      var falta = Math.max(0, w.goalMl - w.ml);
+      var copos = w.cupMl ? Math.ceil(falta / w.cupMl) : 0;
+      return '<div class="line">' + cup(wf, true)
+        + '<span class="stack"><span class="title" style="font-size:13.5px;font-weight:600">' + litros(w.ml) + ' <span style="color:var(--fg-mute);font-weight:500">de ' + litros(w.goalMl) + '</span></span>'
+        + '<span class="sub">' + (falta ? (wd ? 'Hora de beber água · ' : '') + 'faltam ' + copos + (copos === 1 ? ' copo' : ' copos') : 'Meta do dia batida') + '</span></span></div>'
+        + '<div class="line"><span class="wbar"><i style="width:' + (wf * 100).toFixed(1) + '%"></i></span></div>'
+        + '<div class="btns"><button class="btn water" data-act="water-drink">Bebi +' + w.cupMl + ' ml</button>'
+        + (wd ? '<button class="btn" data-act="water-snooze">+10 min</button>' : (w.ml ? '<button class="btn" data-act="water-undo">Desfazer</button>' : ''))
+        + '</div>';
+    }
     if (p === 'captura') {
       return '<input class="input" id="qa" type="text" maxlength="500" placeholder="Nova tarefa — amanhã 9h #projeto !alta" aria-label="Nova tarefa" autocomplete="off">'
         + '<div class="hint">Enter para salvar · Esc para fechar</div>';
@@ -484,7 +663,14 @@
     island.classList.toggle('open', open);
     document.body.classList.toggle('pinned', !!(config && config.pinned));
     document.body.classList.toggle('raised', !!(state && state.raise && config && config.raiseCritical && !config.pinned));
-    document.body.dataset.pos = (config && config.position) || 'tc';
+    document.body.classList.toggle('nudged', !!(state && state.nudge && !(state.raise && config && config.raiseCritical)));
+    document.body.dataset.pos = (config && (config.effectivePosition || config.position)) || 'tc';
+    var drop = !!(config && config.shape === 'drop');
+    document.body.classList.toggle('drop', drop);
+    document.body.classList.toggle('light', islandLight());
+    document.body.classList.toggle('lite', !!(config && config.lite));
+    // Gota parada (repouso, fechada): só o fio.
+    $('wrap').classList.toggle('fio', drop && !open && k === 'repouso' && !config.alwaysVisible);
     $('pin').setAttribute('aria-pressed', String(!!(config && config.pinned)));
 
     var html = closedHtml();
@@ -582,7 +768,7 @@
   var SLIDE_EASE = 'cubic-bezier(.22, 1, .36, 1)';
   function slide(leaving, dir) {
     var box = $('pages'), entering = box.querySelector('.page.on');
-    if (reduceMotion || !entering || !entering.animate) return;
+    if (reduceMotion || (config && config.lite) || !entering || !entering.animate) return;
     var ghost = leaving.cloneNode(true);
     ghost.classList.remove('on');
     ghost.classList.add('ghost');
@@ -646,7 +832,9 @@
       var type = a.dataset.act;
       api.action({ type: type, op: a.dataset.op, taskId: a.dataset.task, id: a.dataset.id });
       if (type === 'task-complete') showFlash('Concluída');
-      else if (type === 'task-snooze') showFlash('Adiado por 10 minutos');
+      else if (type === 'task-snooze' || type === 'water-snooze' || type === 'stand-snooze') showFlash('Adiado por 10 minutos');
+      else if (type === 'water-drink') showFlash('+' + ((waterInfo() && waterInfo().cupMl) || '') + ' ml · boa!');
+      else if (type === 'stand-done') showFlash('Boa! Contagem zerada');
       else if (type === 'focus' && a.dataset.op === 'start') go('foco');
       else if (type === 'task-open' || type === 'open-app') setOpen(false);
       return;
@@ -681,6 +869,27 @@
   api.onConfig(function (c) { config = c; render(); });
   api.onPlayer(function (p) { player = p; render(); });
   api.onSaved(function (title) { showFlash(title ? 'Criada: ' + title : 'Tarefa criada'); });
+  if (api.onChime) api.onChime(function (kind) { chime(kind); });
+
+  /* Som do aviso de água (gota dupla) e de levantar (dois toques subindo).
+     Sintetizado aqui: a ilha não tem arquivo de som nem acesso aos do app. */
+  var actx = null;
+  function chime(kind) {
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === 'suspended') actx.resume();
+      var notes = kind === 'water'
+        ? [[1568, 0, .12, .14], [1175, .09, .24, .12], [1568, .42, .1, .1], [1175, .5, .22, .09]]
+        : [[784, 0, .16, .13], [1047, .14, .3, .13]];
+      notes.forEach(function (n) {
+        var t0 = actx.currentTime + n[1], o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'sine'; o.frequency.setValueAtTime(n[0], t0);
+        g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(n[3], t0 + .012);
+        g.gain.exponentialRampToValueAtTime(.0001, t0 + n[2]);
+        o.connect(g); g.connect(actx.destination); o.start(t0); o.stop(t0 + n[2] + .02);
+      });
+    } catch (e) { /* som nunca derruba a ilha */ }
+  }
 
   api.init().then(function (init) {
     if (!init) return;
@@ -706,15 +915,25 @@
     var now = Date.now();
     var s = {
       line: { kind: 'repouso', playing: true, done: 3, total: 7 },
-      entryPage: 'player', pages: ['hoje', 'player', 'foco', 'lembretes', 'captura'], raise: false, muted: false,
+      entryPage: 'player', pages: ['hoje', 'player', 'foco', 'lembretes', 'agua', 'captura'], raise: false, muted: false,
+      wellness: {
+        due: {
+          water: location.search.indexOf('agua') >= 0 ? { ml: 750, goalMl: 2000, cupMl: 250 } : null,
+          stand: location.search.indexOf('levantar') >= 0 ? { sittingMin: 52 } : null
+        },
+        summary: { water: { ml: 750, goalMl: 2000, cupMl: 250 }, stand: null }
+      },
       reminders: [{ id: 'a:due:x', taskId: 'a', title: 'Revisar notas da 1.11', urgency: 'critical', firedAt: now - 120000 }],
       next: { id: 'b', title: 'Glow nas bordas do board', dueAt: now + 20 * 60000, urgency: 'high' },
       focus: { running: true, kind: 'pomodoro', mode: 'work', endsAt: now + 17 * 60000, leftMs: 17 * 60000, totalMs: 25 * 60000, taskTitle: 'Wordmark em TuDu', cycles: 1 },
       day: { done: 3, total: 7 }
     };
-    var c = { enabled: true, position: 'tc', pinned: false, hoverOpen: true, raiseCritical: true, pauseAtCycleEnd: true, hasBattery: true, sections: { player: true, foco: true, lembretes: true, captura: true } };
+    var qpos = (location.search.match(/pos=([tcb][lcr])/) || [])[1];
+    var c = { enabled: true, position: qpos || 'tc', shape: location.search.indexOf('gota') >= 0 ? 'drop' : 'floating', pinned: false, hoverOpen: true, raiseCritical: true, pauseAtCycleEnd: true, hasBattery: true, sections: { player: true, foco: true, lembretes: true, captura: true } };
     var p = { title: 'Noites de Verão', artist: 'Lua Azul — Ao Vivo', playing: true, position: 61, duration: 213, updatedAt: now, art: null };
     var noop = function () { return function () {}; };
+    if (s.wellness.due.stand) { s.line = { kind: 'levantar', title: 'Hora de levantar', sittingMin: 52 }; s.entryPage = 'hoje'; s.nudge = true; }
+    else if (s.wellness.due.water) { s.line = { kind: 'agua', title: 'Hora de beber água', ml: 750, goalMl: 2000, cupMl: 250 }; s.entryPage = 'agua'; s.nudge = true; }
     window.__demo = { state: s, config: c };
     return {
       init: function () { return Promise.resolve({ state: s, config: c, player: p }); },

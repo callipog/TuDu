@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('tudu', {
     setOpenAtLogin: (v) => ipcRenderer.invoke('settings:set-open-at-login', !!v),
     setStartMinimized: (v) => ipcRenderer.invoke('settings:set-start-minimized', !!v),
     setCloseToTray: (v) => ipcRenderer.invoke('settings:set-close-to-tray', !!v),
+    setSaveMemory: (v) => ipcRenderer.invoke('settings:set-save-memory', !!v),
+    relaunch: () => ipcRenderer.invoke('settings:relaunch'),
     openDataFolder: () => ipcRenderer.invoke('settings:open-path'),
     openExternal: (url) => ipcRenderer.invoke('settings:open-external', String(url)),
     checkUpdates: () => ipcRenderer.invoke('settings:check-updates'),
@@ -72,6 +74,26 @@ contextBridge.exposeInMainWorld('tudu', {
   },
 
   // Ilha: o renderer publica o retrato das fontes; o processo principal resolve.
+  sticky: {
+    /** Janela principal: fixa uma tarefa na área de trabalho. */
+    open: (taskId) => ipcRenderer.send('sticky:open', String(taskId)),
+    /** Janelinha do card: estado salvo (por cima, recolhido). */
+    init: () => ipcRenderer.invoke('sticky:init'),
+    set: (patch) => ipcRenderer.invoke('sticky:set', patch),
+    close: () => ipcRenderer.send('sticky:close'),
+    openInApp: () => ipcRenderer.send('sticky:open-app'),
+    /** Janela principal: o card pediu para abrir a tarefa no app. */
+    onShowTask: (cb) => {
+      const h = (_e, id) => cb(id);
+      ipcRenderer.on('sticky:show-task', h);
+      return () => ipcRenderer.removeListener('sticky:show-task', h);
+    },
+  },
+  wellness: {
+    get: () => ipcRenderer.invoke('wellness:get'),
+    setConfig: (patch) => ipcRenderer.invoke('wellness:set-config', patch),
+    action: (payload) => ipcRenderer.invoke('wellness:action', payload),
+  },
   island: {
     publish: (snapshot) => ipcRenderer.send('island:sources', snapshot),
     state: () => ipcRenderer.invoke('island:state'),
