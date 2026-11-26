@@ -69,6 +69,10 @@
   .island[data-line="lembrete"] { width: 324px; height: 47px; border-radius: 15px; }
   .island[data-line="feito"]    { width: 240px; height: 41px; border-radius: 14px; }
   .island[data-line="indicador"] { width: 250px; height: 41px; border-radius: 14px; }
+  .island[data-line="notif"]    { width: 340px; height: 53px; border-radius: 16px; }
+  /* Notificação de outro app: inicial do app num círculo com a cor dele. */
+  .app-ic { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.25); }
   .ind-ic { flex: 0 0 auto; width: 18px; height: 18px; color: var(--fg); }
   .ind-ic.off { color: #f87171; }
   .ind-pct { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; color: var(--fg); }
@@ -497,6 +501,15 @@
     return (state && state.line && state.line.kind) || 'repouso';
   }
 
+  /* Cor estável por app (o mesmo app sempre na mesma cor), em tons que
+     funcionam no escuro e no claro. */
+  var APP_COLORS = ['#22c55e', '#6366f1', '#0ea5e9', '#f97316', '#ec4899', '#14b8a6', '#a855f7', '#eab308'];
+  function appColor(name) {
+    var s = String(name || ''), h = 0;
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return APP_COLORS[h % APP_COLORS.length];
+  }
+
   function closedHtml() {
     var k = lineKind(), l = state && state.line;
     if (k === 'feito') {
@@ -535,6 +548,11 @@
       var nome = ind.kind === 'caps' ? 'Caps Lock' : 'Num Lock';
       return '<span class="key' + (ind.on ? ' on' : '') + '">' + (ind.kind === 'caps' ? 'A' : '1') + '</span>'
         + '<span class="title" style="font-weight:600">' + nome + ' ' + (ind.on ? 'ligado' : 'desligado') + '</span>';
+    }
+    if (k === 'notif') {
+      return '<span class="app-ic" style="background:' + appColor(l.app) + '">' + esc((l.app || '?').charAt(0).toUpperCase()) + '</span>'
+        + '<span class="stack"><span class="title" style="font-weight:600">' + esc(l.title || l.app) + '</span>'
+        + '<span class="sub">' + esc(l.app + (l.body ? ' · ' + l.body : '')) + '</span></span>';
     }
     if (k === 'agua') {
       return cup(l.goalMl ? l.ml / l.goalMl : 0)

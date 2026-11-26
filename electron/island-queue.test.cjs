@@ -398,3 +398,27 @@ test('a seção Água só existe com o lembrete de água ligado', () => {
   assert.ok(!resolve({ sources: {}, now: 1 }).pages.includes('agua'));
   assert.ok(resolve({ sources: {}, wellness: WELL_DUE, now: 1 }).pages.includes('agua'));
 });
+
+// ------------------------------------------------------------ notificações de apps
+
+test('notificação de outro app aparece por 6s, sobe a ilha e passa na frente do lembrete', () => {
+  const sources = { reminders: [reminder('a', 'high', NOW)] };
+  const n = { app: 'WhatsApp', title: 'Ana', body: 'Chego em 5 min', at: NOW - 1000 };
+  const r = resolve({ sources, notification: n, now: NOW });
+  assert.equal(r.line.kind, 'notif');
+  assert.equal(r.line.app, 'WhatsApp');
+  assert.equal(r.line.body, 'Chego em 5 min');
+  assert.equal(r.flash, true);
+  assert.equal(r.entryPage, 'hoje');
+  const depois = resolve({ sources, notification: { ...n, at: NOW - 6100 }, now: NOW });
+  assert.equal(depois.line.kind, 'lembrete');
+  assert.equal(depois.flash, false);
+});
+
+test('indicador ganha da notificação; notificação sem app é ignorada', () => {
+  const n = { app: 'Discord', title: 'x', at: NOW - 100 };
+  assert.equal(resolve({ notification: n, indicator: { kind: 'caps', on: true, at: NOW - 100 }, now: NOW }).line.kind, 'indicador');
+  assert.equal(resolve({ notification: { title: 'sem app', at: NOW }, now: NOW }).line.kind, 'repouso');
+  const longa = resolve({ notification: { app: 'Mail', title: 'a'.repeat(500), at: NOW }, now: NOW });
+  assert.ok(longa.line.title.length <= 120);
+});

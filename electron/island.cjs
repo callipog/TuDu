@@ -28,6 +28,7 @@ function createIslandHub(options) {
   let player = null;
   let wellness = null;
   let indicator = null;
+  let notification = null;
   const getMediaPulse = opts.getMediaPulse || (() => true);
   let last = null;
   let lastKey = '';
@@ -35,7 +36,7 @@ function createIslandHub(options) {
   const listeners = new Set();
 
   function compute() {
-    return resolve({ sources, player, wellness, indicator, mediaPulse: getMediaPulse(), sections: getSections(), order: getOrder(), now: now() });
+    return resolve({ sources, player, wellness, indicator, notification, mediaPulse: getMediaPulse(), sections: getSections(), order: getOrder(), now: now() });
   }
 
   /* Recalcula e, se mudou, entrega para quem estiver ouvindo. */
@@ -74,6 +75,12 @@ function createIslandHub(options) {
     /** Indicador novo (volume, teclas...): vale por alguns segundos. */
     setIndicator(ind) {
       indicator = ind && typeof ind === 'object' ? ind : null;
+      return refresh();
+    },
+
+    /** Notificação de outro app: vale por alguns segundos. */
+    setNotification(n) {
+      notification = n && typeof n === 'object' ? n : null;
       return refresh();
     },
 

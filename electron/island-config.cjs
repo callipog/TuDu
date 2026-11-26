@@ -9,6 +9,7 @@
  */
 
 const { normalizeIndicatorsConfig } = require('./indicators.cjs');
+const { normalizeNotificationsConfig } = require('./notifications.cjs');
 
 const POSITIONS = ['tl', 'tc', 'tr', 'cl', 'cr', 'bl', 'bc', 'br'];
 const SECTIONS = ['hoje', 'player', 'foco', 'lembretes', 'captura'];
@@ -75,6 +76,7 @@ function normalizeIslandConfig(raw) {
     lite: bool(src.lite, DEFAULTS.lite),
     order: order(src.order),
     indicators: normalizeIndicatorsConfig(src.indicators),
+    notifications: normalizeNotificationsConfig(src.notifications),
     pinned: bool(src.pinned, DEFAULTS.pinned),
     hoverOpen: bool(src.hoverOpen, DEFAULTS.hoverOpen),
     raiseCritical: bool(src.raiseCritical, DEFAULTS.raiseCritical),
@@ -92,11 +94,13 @@ function mergeIslandConfig(current, patch) {
   const base = normalizeIslandConfig(current);
   const p = patch && typeof patch === 'object' ? patch : {};
   const ind = p.indicators && typeof p.indicators === 'object' ? p.indicators : {};
+  const notif = p.notifications && typeof p.notifications === 'object' ? p.notifications : {};
   return normalizeIslandConfig({
     ...base,
     ...p,
     indicators: { ...base.indicators, ...ind, show: { ...base.indicators.show, ...(ind.show && typeof ind.show === 'object' ? ind.show : {}) } },
     sections: { ...base.sections, ...(p.sections && typeof p.sections === 'object' ? p.sections : {}) },
+    notifications: { ...base.notifications, ...notif },
   });
 }
 

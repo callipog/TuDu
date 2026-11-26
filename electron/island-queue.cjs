@@ -10,6 +10,7 @@
  * Ordem (a de cima ganha):
  *   0. indicador (volume, brilho, teclas, microfone) — 1,6s, no lugar do aviso
  *      do Windows; é resposta a um gesto da pessoa, então passa na frente
+ *   0b. notificação de outro app (WhatsApp, Discord, e-mail) — 6s
  *   1. lembrete vencido e não resolvido   — fica até ser resolvido
  *   1b. água / levantar                   — esperam o bloco de foco acabar
  *   2. pulso do player                    — 3s quando a faixa muda; silenciado
@@ -26,6 +27,16 @@
 const PULSE_MS = 3000;
 const INDICATOR_MS = 1600;
 const INDICATOR_KINDS = ['volume', 'brightness', 'mic', 'caps', 'num'];
+const NOTIF_MS = 6000;
+
+/** Notificação de outro app ainda no ar, já limpa; null se passou. */
+function liveNotification(raw, now) {
+  if (!raw || typeof raw !== 'object') return null;
+  const at = finite(raw.at);
+  const app = text(raw.app).slice(0, 60);
+  if (at === null || !app || now < at || now - at >= NOTIF_MS) return null;
+  return { app, title: text(raw.title).slice(0, 120), body: text(raw.body).slice(0, 160), at };
+}
 
 /** Indicador ainda valendo, já limpo; null se passou ou não tem forma certa. */
 function liveIndicator(raw, now) {
@@ -75,6 +86,7 @@ const ENTRY_PAGE = {
   agua: 'agua',
   levantar: 'hoje',
   indicador: 'hoje',
+  notif: 'hoje',
 };
 
 /* Bem-estar já resolvido pelo wellness.cjs; aqui só confere a forma. */
@@ -240,6 +252,7 @@ function resolve(input) {
   /* O pulso de faixa nova é o indicador "músicas": dá para desligar. */
   const pulse = opts.mediaPulse !== false && changedAt !== null && now >= changedAt && now - changedAt < PULSE_MS;
   const indicator = liveIndicator(opts.indicator, now);
+  const notif = indicator ? null : liveNotification(opts.notification, now);
 
   const next = src.next && src.next.dueAt > now && src.next.dueAt - now <= NEXT_WINDOW_MS
     ? src.next
@@ -248,6 +261,8 @@ function resolve(input) {
   let line;
   if (indicator) {
     line = { kind: 'indicador', ind: indicator };
+  } else if (notif) {
+    line = { kind: 'notif', app: notif.app, title: notif.title, body: notif.body };
   } else if (reminders.length) {
     line = reminderLine(reminders, now);
   } else if (standDue) {
@@ -279,8 +294,9 @@ function resolve(input) {
     /* Água e levantar sobem por cima das janelas (sem o vermelho do crítico):
        atrás de uma janela maximizada, ninguém veria o aviso. */
     nudge: !!(standDue || waterDue),
-    /* Indicador sobe a ilha por cima de tudo, como o aviso do Windows faria. */
-    flash: !!indicator,
+    /* Indicador e notificação sobem a ilha por cima de tudo, como o aviso do
+       Windows faria (sem roubar o foco). */
+    flash: !!(indicator || notif),
     wellness: { due: { water: waterDue, stand: standDue }, summary: well.summary },
     /* o pulso do player aconteceu, mas o foco segurou a linha */
     muted: pulse && focusRunning,
@@ -303,6 +319,7 @@ module.exports = {
   hhmm,
   PULSE_MS,
   INDICATOR_MS,
+  NOTIF_MS,
   NEXT_WINDOW_MS,
   PAGE_ORDER,
 };

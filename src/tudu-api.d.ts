@@ -54,6 +54,10 @@ export interface IslandConfig {
   /** Parada por autoHideMin minutos, a ilha some (telas OLED). */
   autoHide: boolean;
   autoHideMin: 1 | 2 | 5 | 10 | 30;
+  /** Notificações de outros apps na ilha; muted: apps silenciados (pelo nome). */
+  notifications: { enabled: boolean; muted: string[] };
+  /** O Windows deixa ler a central de notificações? null: ainda não testado. Só leitura. */
+  notifAccess: 'allowed' | 'denied' | 'unspecified' | 'unavailable' | null;
 }
 
 /** Monitor conectado, para a escolha nas Configurações. */
@@ -193,9 +197,12 @@ declare global {
         state: () => Promise<unknown>;
         getConfig: () => Promise<IslandConfig>;
         displays: () => Promise<DisplayInfo[]>;
-        setConfig: (patch: Partial<Omit<IslandConfig, 'sections' | 'hasBattery' | 'effectivePosition' | 'indicators' | 'osdHideable'>> & {
+        /** Apps que já mandaram notificação (para silenciar). */
+        notifApps: () => Promise<string[]>;
+        setConfig: (patch: Partial<Omit<IslandConfig, 'sections' | 'hasBattery' | 'effectivePosition' | 'indicators' | 'osdHideable' | 'notifications' | 'notifAccess'>> & {
           sections?: Partial<IslandConfig['sections']>;
           indicators?: Partial<Omit<IslandConfig['indicators'], 'show'>> & { show?: Partial<IslandConfig['indicators']['show']> };
+          notifications?: Partial<IslandConfig['notifications']>;
         }) => Promise<IslandConfig>;
         cycleEnded: () => void;
         onAction: (cb: (action: IslandAction) => void) => () => void;

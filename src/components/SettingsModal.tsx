@@ -335,6 +335,7 @@ export function SettingsModal({ isOpen, onClose, onDataImported, pomo }: Setting
       sections: { ...prev.sections, ...(patch.sections ?? {}) },
       order: patch.order ?? prev.order,
       indicators: { ...prev.indicators, ...(patch.indicators ?? {}), show: { ...prev.indicators.show, ...(patch.indicators?.show ?? {}) } },
+      notifications: { ...prev.notifications, ...(patch.notifications ?? {}) },
     } as IslandConfig : prev);
     const saved = await window.tudu?.island?.setConfig(patch).catch(() => null);
     if (saved) setIsland(saved);
@@ -350,6 +351,15 @@ export function SettingsModal({ isOpen, onClose, onDataImported, pomo }: Setting
   useEffect(() => {
     if (isOpen && section === 'ilha' && ilhaTab === 'ilha') window.tudu?.island?.displays?.().then(setDisplays).catch(() => {});
   }, [isOpen, section, ilhaTab]);
+  const [notifApps, setNotifApps] = useState<string[]>([]);
+  useEffect(() => {
+    if (isOpen && section === 'ilha' && ilhaTab === 'ilha') window.tudu?.island?.notifApps?.().then(setNotifApps).catch(() => {});
+  }, [isOpen, section, ilhaTab, island?.notifications.enabled]);
+  function toggleAppMuted(app: string, show: boolean) {
+    const atual = island?.notifications.muted ?? [];
+    const muted = show ? atual.filter(a => a.toLowerCase() !== app.toLowerCase()) : [...atual, app];
+    updateIsland({ notifications: { muted } });
+  }
   // Monitor escolhido que não está conectado agora: a ilha está no principal.
   const monitorAtual = island?.monitor && island.monitor !== 'primary' && displays.some(d => d.id === island.monitor) ? island.monitor : 'primary';
 
@@ -753,6 +763,40 @@ export function SettingsModal({ isOpen, onClose, onDataImported, pomo }: Setting
                             : 'Funciona no Windows 10 e em parte das versões do 11. As teclas de volume continuam funcionando normalmente.'}
                         />
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <p className={sectionTitle}>Notificações de apps</p>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 divide-y divide-white/5">
+                    <CheckRow
+                      checked={!!island?.notifications.enabled}
+                      onChange={(v) => updateIsland({ notifications: { enabled: v } })}
+                      icon={<BellRing size={15} />}
+                      label="Mostrar notificações de outros apps"
+                      hint="WhatsApp, Discord, e-mail e outros aparecem na ilha por alguns segundos, inclusive com o Não incomodar do Windows ligado. O texto não é guardado."
+                    />
+                    {island?.notifications.enabled && island.notifAccess && island.notifAccess !== 'allowed' && (
+                      <p className="text-[11px] text-amber-200 py-2">
+                        O Windows não deu acesso às notificações. Libere em Configurações do Windows › Privacidade e segurança › Notificações.
+                      </p>
+                    )}
+                    <div className={`pl-7 py-1 ${island?.notifications.enabled ? '' : 'opacity-40 pointer-events-none'}`}>
+                      {notifApps.length ? (
+                        <div className="grid grid-cols-2 gap-x-4">
+                          {notifApps.map(app => (
+                            <React.Fragment key={app}><CheckRow
+                              checked={!(island?.notifications.muted ?? []).some(m => m.toLowerCase() === app.toLowerCase())}
+                              onChange={(v) => toggleAppMuted(app, v)}
+                              icon={<Bell size={14} />}
+                              label={app}
+                            /></React.Fragment>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-zinc-500 py-1.5">Os apps aparecem aqui conforme mandarem notificações. Desmarque para silenciar um deles na ilha.</p>
+                      )}
                     </div>
                   </div>
                 </div>

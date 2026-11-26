@@ -14,6 +14,8 @@ const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, e
 const { createMediaBridge, forQueue, forIsland } = require('./media.cjs');
 const { createIndicatorsBridge, FLASH_MS } = require('./indicators.cjs');
 const { createDesktopWatch } = require('./desktop-watch.cjs');
+const { createNotificationsBridge, rememberApp } = require('./notifications.cjs');
+const { NOTIF_MS } = require('./island-queue.cjs');
 const { askBattery, nativeProbe } = require('./native-helper.cjs');
 const wellness = require('./wellness.cjs');
 const stickies = require('./stickies.cjs');
@@ -151,6 +153,28 @@ const indicators = createIndicatorsBridge({
 });
 
 // Win+D põe a área de trabalho na frente de tudo; o vigia sobe a ilha junto.
+// Notificações de outros apps (WhatsApp, Discord...): uma linha de 6s na ilha.
+let notifTimer = null;
+let notifAccess = null;
+const notifications = createNotificationsBridge({
+  onNotification: (n) => {
+    islandHub.setNotification(n);
+    clearTimeout(notifTimer);
+    notifTimer = setTimeout(() => islandHub.refresh(), NOTIF_MS + 30);
+  },
+  // Lista de apps que já mandaram notificação (para silenciar nas Configurações).
+  onApp: (app) => {
+    const atual = readSettings().notifApps;
+    const next = rememberApp(atual, app);
+    if (next !== atual && next.length !== (Array.isArray(atual) ? atual.length : 0)) writeSettings({ notifApps: next });
+  },
+  onAccess: (a) => {
+    if (a === notifAccess) return;
+    notifAccess = a;
+    sendIsland('island:config', publicIslandConfig());
+  },
+});
+
 const desktopWatch = createDesktopWatch({
   onChange: (on, cls) => { if (isDev) console.log('[ilha] área de trabalho', on ? 'à vista' : 'coberta', cls); },
   onFullscreen: (rect) => {
@@ -705,6 +729,8 @@ function publicIslandConfig() {
     hasBattery: hasBattery === true,
     /* null: ainda não sabemos; false: esta versão do Windows não deixa esconder. */
     osdHideable: osdFound,
+    /* null: ainda não testado; 'allowed', 'denied' ou 'unavailable'. */
+    notifAccess,
   };
 }
 
@@ -838,6 +864,9 @@ function syncIsland() {
   indicators.configure(cfg.indicators);
   if (cfg.enabled && cfg.indicators.enabled) indicators.start();
   else indicators.stop();
+  notifications.configure(cfg.notifications);
+  if (cfg.enabled && cfg.notifications.enabled) notifications.start();
+  else notifications.stop();
   if (!cfg.enabled) {
     media.stop();
     if (islandWindow && !islandWindow.isDestroyed()) islandWindow.close();
@@ -1351,6 +1380,10 @@ app.whenReady().then(() => {
   // Configurações (tela do app).
   ipcMain.handle('island:get-config', () => publicIslandConfig());
   ipcMain.handle('island:displays', () => listDisplays());
+  ipcMain.handle('island:notif-apps', () => {
+    const l = readSettings().notifApps;
+    return Array.isArray(l) ? l.filter(x => typeof x === 'string').slice(0, 40) : [];
+  });
   ipcMain.handle('island:set-config', (_event, patch) => {
     writeSettings({ island: mergeIslandConfig(readSettings().island, patch) });
     syncIsland();
@@ -1451,6 +1484,7 @@ app.on('before-quit', () => {
   bridge.stop();
   islandHub.stop();
   media.stop();
+  notifications.stop();
   indicators.stop();
 });
 

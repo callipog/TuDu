@@ -3,7 +3,7 @@
 //!   - stdout: uma linha JSON por evento ({"t":"..."});
 //!   - stdin: um comando por linha; fechar o stdin encerra o helper.
 //!
-//! Uso: tudu-helper.exe media | desktop | indicators | battery
+//! Uso: tudu-helper.exe media | desktop | indicators | battery | notifications
 //!
 //! Subsistema "windows": sem janela de console (nem conhost.exe) por instancia.
 #![windows_subsystem = "windows"]
@@ -13,6 +13,7 @@ mod desktop;
 mod indicators;
 mod io;
 mod media;
+mod notifications;
 
 use serde_json::json;
 
@@ -35,6 +36,7 @@ fn main() {
         "desktop" => desktop::run(),
         "indicators" => indicators::run(),
         "battery" => battery::run(),
+        "notifications" => notifications::run(),
         _ => {
             io::emit(&json!({ "t": "error", "message": format!("modo desconhecido: {mode} {BUILD_SALT}") }));
             2
