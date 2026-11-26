@@ -38,7 +38,11 @@
   body[data-pos="cl"] .slot { justify-content: flex-start; }
   body[data-pos="cr"] .slot { justify-content: flex-end; }
 
-  .wrap { position: relative; }
+  .wrap { position: relative; transition: opacity .3s ease; }
+  /* Parada há um tempo (opção "esconder quando não estiver em uso", pensando em
+     telas OLED): some de vez. A área de passar o mouse continua lá, e ela volta
+     ao passar o mouse ou quando tiver algo para mostrar. */
+  body.asleep .wrap { opacity: 0; transition: opacity 1.4s ease; }
 
   /* ---------- a ilha ---------- */
   .island {
@@ -385,6 +389,7 @@
   var state = null, config = null, player = null;
   var open = false, page = 'hoje', flash = null, flashTimer = null;
   var closeTimer = null, over = false;
+  var asleep = false, sleepTimer = null;
 
   /* A ilha reabre na última seção que você olhou, e lembra dela até depois de
      reiniciar o app. Sem histórico, entra pela seção que a fila sugere. */
@@ -672,6 +677,7 @@
     // Gota parada (repouso, fechada): só o fio.
     $('wrap').classList.toggle('fio', drop && !open && k === 'repouso' && !config.alwaysVisible);
     $('pin').setAttribute('aria-pressed', String(!!(config && config.pinned)));
+    updateSleep(k);
 
     var html = closedHtml();
     if (html !== lastClosed) {
@@ -727,6 +733,28 @@
       if (q('fill')) q('fill').style.width = frac.toFixed(1) + '%';
       if (q('knob')) q('knob').style.left = frac.toFixed(1) + '%';
     }
+  }
+
+  /* --------------------------------------------- esconder quando parada --
+     Só dorme em repouso (nada a mostrar), fechada, sem o mouse em cima e sem
+     alfinete. Qualquer coisa nova (lembrete, música, indicador) acorda. */
+  function updateSleep(k) {
+    var can = !!(config && config.autoHide) && !(config && config.pinned) && !open && !over && !flash && k === 'repouso';
+    if (!can) {
+      clearTimeout(sleepTimer); sleepTimer = null;
+      if (asleep) { asleep = false; document.body.classList.remove('asleep'); }
+      return;
+    }
+    if (asleep || sleepTimer) return;
+    sleepTimer = setTimeout(function () {
+      sleepTimer = null; asleep = true;
+      // Atrás de outras janelas o Chromium congela as transições: o apagar
+      // só começaria quando ela aparecesse. Escondida, some sem animação.
+      var w = $('wrap');
+      if (document.hidden) w.style.transition = 'none';
+      document.body.classList.add('asleep');
+      if (document.hidden) { void w.offsetWidth; w.style.transition = ''; }
+    }, ((config && config.autoHideMin) || 5) * 60000);
   }
 
   /* ------------------------------------------------------- abrir/fechar -- */
@@ -807,6 +835,7 @@
     if (v === over) return;
     over = v;
     api.hit(v);
+    updateSleep(lineKind());
     if (v) {
       clearTimeout(closeTimer);
       if (config && config.hoverOpen !== false) setOpen(true);
@@ -866,7 +895,7 @@
 
   /* ---------------------------------------------------------- dados -- */
   api.onState(function (s) { state = s; render(); });
-  api.onConfig(function (c) { config = c; render(); });
+  api.onConfig(function (c) { config = c; clearTimeout(sleepTimer); sleepTimer = null; render(); });
   api.onPlayer(function (p) { player = p; render(); });
   api.onSaved(function (title) { showFlash(title ? 'Criada: ' + title : 'Tarefa criada'); });
   if (api.onChime) api.onChime(function (kind) { chime(kind); });

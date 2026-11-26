@@ -33,6 +33,20 @@ public static class TuduDesk {
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+  [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
+  [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFO mi);
+  /* Tela cheia: a janela cobre o monitor inteiro. Devolve x,y,w,h do monitor ou null. */
+  public static int[] Fullscreen(IntPtr h) {
+    RECT r; if (!GetWindowRect(h, out r)) return null;
+    var mi = new MONITORINFO(); mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+    if (!GetMonitorInfo(MonitorFromWindow(h, 2), ref mi)) return null;
+    var m = mi.rcMonitor;
+    if (r.L <= m.L && r.T <= m.T && r.R >= m.R && r.B >= m.B) return new int[] { m.L, m.T, m.R - m.L, m.B - m.T };
+    return null;
+  }
 }
 "@
 } catch {
@@ -55,6 +69,7 @@ $extras = @()
 $ownPid = 0
 $auto = $true
 $onDesktop = $false
+$full = ''
 $tick = 0
 
 function RaiseOne($h) {
@@ -107,6 +122,18 @@ while ($true) {
       $cls = $sb.ToString()
       $fgPid = [uint32]0
       [void][TuduDesk]::GetWindowThreadProcessId($fg, [ref]$fgPid)
+      # Tela cheia (jogo, video, apresentacao): a ilha pode ir para outro monitor.
+      # Janela do proprio TuDu na frente conta como "sem tela cheia".
+      if ($neutral -notcontains $cls) {
+        $isDesk = ($cls -eq 'WorkerW' -or $cls -eq 'Progman')
+        $fs = if ($isDesk -or $fgPid -eq $ownPid) { $null } else { [TuduDesk]::Fullscreen($fg) }
+        $key = if ($fs) { $fs -join ',' } else { '' }
+        if ($key -ne $full) {
+          $full = $key
+          if ($fs) { Emit @{ t = 'fullscreen'; on = $true; x = $fs[0]; y = $fs[1]; w = $fs[2]; h = $fs[3] } }
+          else { Emit @{ t = 'fullscreen'; on = $false } }
+        }
+      }
       # A propria ilha (ou o TuDu) e a barra de tarefas nao mudam nada.
       if ($fgPid -ne $ownPid -and $neutral -notcontains $cls) {
         $desk = ($cls -eq 'WorkerW' -or $cls -eq 'Progman')

@@ -17,6 +17,8 @@ const SECTIONS = ['hoje', 'player', 'foco', 'lembretes', 'captura'];
 const SHAPES = ['floating', 'drop'];
 const THEMES = ['dark', 'light', 'system'];
 const ORDERABLE = ['hoje', 'player', 'foco', 'lembretes', 'agua', 'captura'];
+/* Minutos parada até sumir (telas OLED: evita marcar a imagem). */
+const AUTO_HIDE_MINUTES = [1, 2, 5, 10, 30];
 
 const DEFAULTS = Object.freeze({
   enabled: true,
@@ -31,6 +33,13 @@ const DEFAULTS = Object.freeze({
   hoverOpen: true,
   raiseCritical: true,
   pauseAtCycleEnd: true,
+  /* Monitor: 'primary' ou o id de um monitor (Electron display.id, como texto). */
+  monitor: 'primary',
+  /* App em tela cheia no monitor da ilha: ela muda para outro monitor. */
+  avoidFullscreen: true,
+  /* Parada (nada a mostrar) por N minutos, a ilha some; volta ao passar o mouse. */
+  autoHide: false,
+  autoHideMin: 5,
   sections: Object.freeze({ hoje: true, player: true, foco: true, lembretes: true, captura: true }),
   order: Object.freeze(ORDERABLE.slice()),
 });
@@ -70,6 +79,10 @@ function normalizeIslandConfig(raw) {
     hoverOpen: bool(src.hoverOpen, DEFAULTS.hoverOpen),
     raiseCritical: bool(src.raiseCritical, DEFAULTS.raiseCritical),
     pauseAtCycleEnd: bool(src.pauseAtCycleEnd, DEFAULTS.pauseAtCycleEnd),
+    monitor: typeof src.monitor === 'string' && /^(primary|\d{1,20})$/.test(src.monitor) ? src.monitor : DEFAULTS.monitor,
+    avoidFullscreen: bool(src.avoidFullscreen, DEFAULTS.avoidFullscreen),
+    autoHide: bool(src.autoHide, DEFAULTS.autoHide),
+    autoHideMin: AUTO_HIDE_MINUTES.includes(src.autoHideMin) ? src.autoHideMin : DEFAULTS.autoHideMin,
     sections,
   };
 }
@@ -125,6 +138,27 @@ function islandBounds(position, workArea, size) {
 }
 
 /**
+ * Em que monitor a ilha mora. `displays`: [{ id, workArea }]. O escolhido, se
+ * ainda estiver conectado; senão o principal. Com um app em tela cheia nele
+ * (`busyIds`) e a opção ligada, vai para o primeiro monitor livre — se todos
+ * estiverem ocupados, fica onde está.
+ */
+function pickDisplay(config, displays, primaryId, busyIds) {
+  const c = normalizeIslandConfig(config);
+  const list = Array.isArray(displays) ? displays.filter(d => d && d.workArea) : [];
+  if (!list.length) return null;
+  const byId = (id) => list.find(d => String(d.id) === String(id));
+  let chosen = (c.monitor !== 'primary' && byId(c.monitor)) || byId(primaryId) || list[0];
+  const busy = (Array.isArray(busyIds) ? busyIds : []).map(String);
+  if (c.avoidFullscreen && busy.includes(String(chosen.id))) {
+    const livre = (byId(primaryId) && !busy.includes(String(primaryId)) ? byId(primaryId) : null)
+      || list.find(d => !busy.includes(String(d.id)));
+    if (livre) chosen = livre;
+  }
+  return chosen;
+}
+
+/**
  * A ilha deve furar as janelas agora? Fixada, sempre. Fora isso, só com um
  * lembrete crítico pendente — e só se a pessoa não desligou isso.
  */
@@ -142,7 +176,9 @@ module.exports = {
   islandBounds,
   shouldBeOnTop,
   effectivePosition,
+  pickDisplay,
   POSITIONS,
+  AUTO_HIDE_MINUTES,
   SHAPES,
   DEFAULTS,
   WINDOW_W,

@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('tudu', {
     publish: (snapshot) => ipcRenderer.send('island:sources', snapshot),
     state: () => ipcRenderer.invoke('island:state'),
     getConfig: () => ipcRenderer.invoke('island:get-config'),
+    displays: () => ipcRenderer.invoke('island:displays'),
     setConfig: (patch) => ipcRenderer.invoke('island:set-config', patch),
     cycleEnded: () => ipcRenderer.send('island:cycle-ended'),
     // Botões da ilha que mexem em tarefas e no foco: só este renderer sabe fazer.

@@ -47,6 +47,22 @@ export interface IslandConfig {
   osdHideable: boolean | null;
   /** Notebook (mostra a bateria) ou PC de mesa. Só leitura. */
   hasBattery: boolean;
+  /** 'primary' ou o id de um monitor (ver island.displays()). */
+  monitor: string;
+  /** App em tela cheia no monitor da ilha: ela vai para outro monitor. */
+  avoidFullscreen: boolean;
+  /** Parada por autoHideMin minutos, a ilha some (telas OLED). */
+  autoHide: boolean;
+  autoHideMin: 1 | 2 | 5 | 10 | 30;
+}
+
+/** Monitor conectado, para a escolha nas Configurações. */
+export interface DisplayInfo {
+  id: string;
+  label: string;
+  width: number;
+  height: number;
+  primary: boolean;
 }
 
 /** Card fixado na área de trabalho (settings.json → stickies). */
@@ -176,6 +192,7 @@ declare global {
         /** Estado resolvido pela fila de prioridade (electron/island-queue.cjs). */
         state: () => Promise<unknown>;
         getConfig: () => Promise<IslandConfig>;
+        displays: () => Promise<DisplayInfo[]>;
         setConfig: (patch: Partial<Omit<IslandConfig, 'sections' | 'hasBattery' | 'effectivePosition' | 'indicators' | 'osdHideable'>> & {
           sections?: Partial<IslandConfig['sections']>;
           indicators?: Partial<Omit<IslandConfig['indicators'], 'show'>> & { show?: Partial<IslandConfig['indicators']['show']> };

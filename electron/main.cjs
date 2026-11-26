@@ -10,7 +10,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 const bridge = require('./bridge.cjs');
 const { createIslandHub } = require('./island.cjs');
-const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, effectivePosition, WINDOW_W, WINDOW_H } = require('./island-config.cjs');
+const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, effectivePosition, pickDisplay, WINDOW_W, WINDOW_H } = require('./island-config.cjs');
 const { createMediaBridge, forQueue, forIsland } = require('./media.cjs');
 const { createIndicatorsBridge, FLASH_MS } = require('./indicators.cjs');
 const { createDesktopWatch } = require('./desktop-watch.cjs');
@@ -153,7 +153,25 @@ const indicators = createIndicatorsBridge({
 // Win+D põe a área de trabalho na frente de tudo; o vigia sobe a ilha junto.
 const desktopWatch = createDesktopWatch({
   onChange: (on, cls) => { if (isDev) console.log('[ilha] área de trabalho', on ? 'à vista' : 'coberta', cls); },
+  onFullscreen: (rect) => {
+    const id = rect ? displayAtPhysical(rect) : null;
+    if (id === fullscreenDisplayId) return;
+    fullscreenDisplayId = id;
+    if (isDev) console.log('[ilha] tela cheia no monitor', id);
+    placeIsland();
+  },
 });
+
+/* Monitor com um app em tela cheia em primeiro plano (id do Electron), ou null. */
+let fullscreenDisplayId = null;
+
+/** O helper fala em pixels físicos; o Electron, em DIP. Acha o monitor pelo centro. */
+function displayAtPhysical(r) {
+  const tela = require('electron').screen;
+  const centro = { x: Math.round(r.x + r.w / 2), y: Math.round(r.y + r.h / 2) };
+  const dip = typeof tela.screenToDipPoint === 'function' ? tela.screenToDipPoint(centro) : centro;
+  return tela.getDisplayNearestPoint(dip).id;
+}
 
 /* ---- Bem-estar (água e levantar) ----------------------------------------
    O estado (copos do dia, desde quando está sentado) fica em memória e vai
@@ -692,8 +710,28 @@ function publicIslandConfig() {
 
 function placeIsland() {
   if (!islandWindow || islandWindow.isDestroyed()) return;
-  const { workArea } = require('electron').screen.getPrimaryDisplay();
-  islandWindow.setBounds(islandBounds(effectivePosition(islandConfig()), workArea, { width: WINDOW_W, height: WINDOW_H }));
+  const tela = require('electron').screen;
+  const cfg = islandConfig();
+  const primary = tela.getPrimaryDisplay();
+  const busy = fullscreenDisplayId != null ? [fullscreenDisplayId] : [];
+  const d = pickDisplay(cfg, tela.getAllDisplays(), primary.id, busy) || primary;
+  const alvo = islandBounds(effectivePosition(cfg), d.workArea, { width: WINDOW_W, height: WINDOW_H });
+  const atual = islandWindow.getBounds();
+  if (atual.x === alvo.x && atual.y === alvo.y && atual.width === alvo.width && atual.height === alvo.height) return;
+  islandWindow.setBounds(alvo);
+}
+
+/** Monitores para a tela de Configurações. */
+function listDisplays() {
+  const tela = require('electron').screen;
+  const primary = tela.getPrimaryDisplay().id;
+  return tela.getAllDisplays().map((d, i) => ({
+    id: String(d.id),
+    label: d.label || `Monitor ${i + 1}`,
+    width: d.size.width,
+    height: d.size.height,
+    primary: d.id === primary,
+  }));
 }
 
 function applyIslandZ(force) {
@@ -1312,6 +1350,7 @@ app.whenReady().then(() => {
 
   // Configurações (tela do app).
   ipcMain.handle('island:get-config', () => publicIslandConfig());
+  ipcMain.handle('island:displays', () => listDisplays());
   ipcMain.handle('island:set-config', (_event, patch) => {
     writeSettings({ island: mergeIslandConfig(readSettings().island, patch) });
     syncIsland();

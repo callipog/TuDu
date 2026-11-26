@@ -7,14 +7,14 @@ import { taskService } from '../services/tasks';
 import { tagService } from '../services/tags';
 import { themeService, Theme } from '../services/theme';
 import { boardStyleService, BoardGlow, BoardRadius, BOARD_GLOWS, BOARD_RADII } from '../services/boardStyle';
-import type { IslandConfig } from '../tudu-api';
+import type { IslandConfig, DisplayInfo } from '../tudu-api';
 import { CheckRow } from './CheckRow';
 import { IslandSectionsList } from './IslandSectionsList';
 import { FocoSettings, AguaSettings } from './FocusWaterSettings';
 import type { Pomodoro } from '../hooks/usePomodoro';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Eye, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee, Plug, Zap, Keyboard, CloudUpload, HardDrive, Palette, Info, AlertTriangle, PanelTop, Pin, MousePointerClick, Music, Timer, BellRing, ListPlus, CalendarCheck, Droplets, Settings2, Feather, Volume2, MicOff, MemoryStick } from 'lucide-react';
+import { Check, FolderOpen, Bug, Bell, Github, Power, EyeOff, Eye, Copy, Download, Upload, RefreshCw, MinusSquare, ListChecks, Tag as TagIcon, Moon, Sun, Monitor, Coffee, Plug, Zap, Keyboard, CloudUpload, HardDrive, Palette, Info, AlertTriangle, PanelTop, Pin, MousePointerClick, Music, Timer, BellRing, ListPlus, CalendarCheck, Droplets, Settings2, Feather, Volume2, MicOff, MemoryStick, Maximize, Hourglass } from 'lucide-react';
 
 type BridgeStatus = Awaited<ReturnType<NonNullable<Window['tudu']>['bridge']['status']>>;
 type CaptureConfig = Awaited<ReturnType<NonNullable<Window['tudu']>['capture']['get']>>;
@@ -346,6 +346,12 @@ export function SettingsModal({ isOpen, onClose, onDataImported, pomo }: Setting
     if (isOpen && section === 'ilha') window.tudu?.wellness?.get().then(w => setWaterOn(w.config.water.enabled)).catch(() => {});
   }, [isOpen, section, ilhaTab]);
   const posAtual = island?.effectivePosition ?? island?.position;
+  const [displays, setDisplays] = useState<DisplayInfo[]>([]);
+  useEffect(() => {
+    if (isOpen && section === 'ilha' && ilhaTab === 'ilha') window.tudu?.island?.displays?.().then(setDisplays).catch(() => {});
+  }, [isOpen, section, ilhaTab]);
+  // Monitor escolhido que não está conectado agora: a ilha está no principal.
+  const monitorAtual = island?.monitor && island.monitor !== 'primary' && displays.some(d => d.id === island.monitor) ? island.monitor : 'primary';
 
   const navItem = (item: typeof PERIGO, perigoso = false) => {
     const ativo = section === item.id;
@@ -664,6 +670,47 @@ export function SettingsModal({ isOpen, onClose, onDataImported, pomo }: Setting
                 </div>
 
                 <div>
+                  <p className={sectionTitle}>Monitor</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[{ id: 'primary', label: 'Principal', hint: displays.find(d => d.primary) }, ...displays.filter(d => !d.primary).map((d, i) => ({ id: d.id, label: d.label || `Monitor ${i + 2}`, hint: d }))].map(opt => {
+                      const on = monitorAtual === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() => updateIsland({ monitor: opt.id })}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${
+                            on ? 'bg-indigo-500/10 border-indigo-500/50' : 'bg-white/[0.02] hover:bg-white/5 border-white/10'
+                          }`}
+                        >
+                          <Monitor size={14} className={on ? 'text-indigo-300' : 'text-zinc-400'} />
+                          <span>
+                            <span className="block text-sm text-white">{opt.label}</span>
+                            {opt.hint && <span className="block text-[11px] text-zinc-500">{opt.hint.width} × {opt.hint.height}</span>}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {island?.monitor && island.monitor !== 'primary' && monitorAtual === 'primary' && (
+                    <p className="text-[11px] text-zinc-500 mt-2">O monitor escolhido não está conectado agora: a ilha está no principal e volta para ele quando for conectado.</p>
+                  )}
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 mt-3">
+                    <CheckRow
+                      checked={island?.avoidFullscreen !== false}
+                      onChange={(v) => updateIsland({ avoidFullscreen: v })}
+                      disabled={displays.length < 2}
+                      icon={<Maximize size={15} />}
+                      label="Ir para outro monitor com um app em tela cheia"
+                      hint={displays.length < 2
+                        ? 'Precisa de mais de um monitor conectado.'
+                        : 'Jogo, vídeo ou apresentação em tela cheia no monitor da ilha: ela passa para outro e volta quando você sair.'}
+                    />
+                  </div>
+                </div>
+
+                <div>
                   <p className={sectionTitle}>Seções</p>
                   <IslandSectionsList island={island} update={updateIsland} waterOn={waterOn} onOpenAgua={() => setIlhaTab('agua')} />
                 </div>
@@ -717,6 +764,25 @@ export function SettingsModal({ isOpen, onClose, onDataImported, pomo }: Setting
                     <CheckRow checked={!!island?.raiseCritical} onChange={(v) => updateIsland({ raiseCritical: v })} icon={<AlertTriangle size={15} />} label="Lembrete crítico sobe por cima das janelas" hint="Os outros esperam você voltar à área de trabalho." />
                     <CheckRow checked={!!island?.pinned} onChange={(v) => updateIsland({ pinned: v })} icon={<Pin size={15} />} label="Fixar por cima das janelas" hint="A ilha fica sempre à vista. O mesmo que o alfinete dela." />
                     <CheckRow checked={!!island?.pauseAtCycleEnd} onChange={(v) => updateIsland({ pauseAtCycleEnd: v })} disabled={!island?.sections.player} icon={<Music size={15} />} label="Pausar a música no fim do ciclo de foco" hint="Quando um bloco do Pomodoro fecha, a faixa para sozinha." />
+                    <CheckRow checked={!!island?.autoHide} onChange={(v) => updateIsland({ autoHide: v })} icon={<Hourglass size={15} />} label="Esconder quando não estiver em uso" hint="Sem nada para mostrar, a ilha some depois de um tempo e volta ao passar o mouse ou quando chegar algo novo. Bom para telas OLED." />
+                    {island?.autoHide && (
+                      <div className="flex items-center gap-2 py-2 pl-7">
+                        <span className="text-[11px] text-zinc-500">Depois de</span>
+                        {([1, 2, 5, 10, 30] as const).map(m => (
+                          <button
+                            key={m}
+                            type="button"
+                            aria-pressed={island.autoHideMin === m}
+                            onClick={() => updateIsland({ autoHideMin: m })}
+                            className={`px-2 py-0.5 rounded-md text-xs border transition-colors ${
+                              island.autoHideMin === m ? 'bg-indigo-500/15 border-indigo-500/50 text-indigo-200' : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:bg-white/5'
+                            }`}
+                          >
+                            {m} min
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, effectivePosition, DEFAULTS } = require('./island-config.cjs');
+const { normalizeIslandConfig, mergeIslandConfig, islandBounds, shouldBeOnTop, effectivePosition, pickDisplay, DEFAULTS } = require('./island-config.cjs');
 
 test('formato: flutuante por padrão; valor desconhecido volta ao padrão', () => {
   assert.equal(normalizeIslandConfig(undefined).shape, 'floating');
@@ -135,4 +135,38 @@ test('a fila recebe o mínimo; a janela recebe a capa e o tempo', () => {
 test('ordem das seções: limpa repetidas e desconhecidas, completa o que faltar', () => {
   const c = normalizeIslandConfig({ order: ['captura', 'captura', 'nada', 'agua'] });
   assert.deepEqual(c.order, ['captura', 'agua', 'hoje', 'player', 'foco', 'lembretes']);
+});
+
+const D = (id) => ({ id, workArea: { x: id * 2000, y: 0, width: 1920, height: 1040 } });
+
+test('monitor: principal por padrão; o escolhido se estiver conectado', () => {
+  const ds = [D(1), D(2), D(3)];
+  assert.equal(pickDisplay({}, ds, 2).id, 2);
+  assert.equal(pickDisplay({ monitor: '3' }, ds, 2).id, 3);
+  // desconectado: volta ao principal
+  assert.equal(pickDisplay({ monitor: '9' }, ds, 2).id, 2);
+  // valor estranho vira 'primary'
+  assert.equal(normalizeIslandConfig({ monitor: 'abc' }).monitor, 'primary');
+  assert.equal(pickDisplay({}, [], 1), null);
+});
+
+test('tela cheia no monitor da ilha: vai para outro livre, preferindo o principal', () => {
+  const ds = [D(1), D(2), D(3)];
+  assert.equal(pickDisplay({ monitor: '3' }, ds, 1, ['3']).id, 1);
+  assert.equal(pickDisplay({}, ds, 1, ['1']).id, 2);
+  // todos ocupados: fica onde está
+  assert.equal(pickDisplay({}, ds, 1, ['1', '2', '3']).id, 1);
+  // opção desligada: não sai do lugar
+  assert.equal(pickDisplay({ avoidFullscreen: false }, ds, 1, ['1']).id, 1);
+  // tela cheia em outro monitor não muda nada
+  assert.equal(pickDisplay({}, ds, 1, ['2']).id, 1);
+});
+
+test('esconder parada: desligado por padrão e só minutos da lista', () => {
+  const c = normalizeIslandConfig({});
+  assert.equal(c.autoHide, false);
+  assert.equal(c.autoHideMin, 5);
+  assert.equal(normalizeIslandConfig({ autoHideMin: 7 }).autoHideMin, 5);
+  assert.equal(normalizeIslandConfig({ autoHideMin: 10 }).autoHideMin, 10);
+  assert.equal(normalizeIslandConfig({}).avoidFullscreen, true);
 });

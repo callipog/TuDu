@@ -16,7 +16,7 @@ function hwndOf(win) {
   return buf.length >= 8 ? buf.readBigUInt64LE(0).toString() : String(buf.readUInt32LE(0));
 }
 
-function createDesktopWatch({ onChange, log = console } = {}) {
+function createDesktopWatch({ onChange, onFullscreen, log = console } = {}) {
   let child = null;
   let available = process.platform === 'win32';
   let target = null;
@@ -61,6 +61,11 @@ function createDesktopWatch({ onChange, log = console } = {}) {
           onDesktop = !!msg.on;
           if (onChange) onChange(onDesktop, msg.cls);
         }
+        // App em tela cheia: retângulo do monitor dele, em pixels físicos (ou null).
+        if (msg.t === 'fullscreen' && onFullscreen) {
+          const r = msg.on ? { x: Number(msg.x) || 0, y: Number(msg.y) || 0, w: Number(msg.w) || 0, h: Number(msg.h) || 0 } : null;
+          onFullscreen(r && r.w > 0 && r.h > 0 ? r : null);
+        }
       }
     });
     child.on('error', err => log.warn('desktop: helper falhou', err && err.message));
@@ -70,6 +75,7 @@ function createDesktopWatch({ onChange, log = console } = {}) {
       child = null;
       buffer = '';
       onDesktop = false;
+      if (onFullscreen) onFullscreen(null);
       if (!available || !wanted() || restarts >= 3) return;
       restarts++;
       setTimeout(() => { if (wanted()) start(); }, 2000);
